@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Secrets (commit .env.example only)
+.env
+
+# Local bid secrets (salt, bid plaintext) — never commit (design.md 5.3)
+.bids/
+
+# Hardhat build outputs
+contracts/artifacts/
+contracts/cache/
+contracts/typechain-types/
+
+# Coverage
+coverage/
+coverage.json
+
+# TypeScript build outputs
+dist/
+
+# Local editor / tool settings
+.claude/settings.local.json
+.vscode/
+*.log
