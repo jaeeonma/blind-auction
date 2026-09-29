@@ -55,7 +55,7 @@ GitHub 저장소의 작업 이력 관리 방식도 평가된다. 상세 규칙�
 
 현재 단계를 끝내면 체크하고, 다음 단계는 지시를 받은 뒤 시작한다.
 
-- [ ] **0단계. 프로젝트 세팅** — `git init`, GitHub 저장소 연결, 폴더 구조(design.md 1.5), Hardhat 초기화, Docker Compose로 PostgreSQL 실행(named volume, `restart: unless-stopped`), `.env.example`, `.gitignore`, README 뼈대(design.md 1.7 섹션 구성)
+- [x] **0단계. 프로젝트 세팅** — `git init`, GitHub 저장소 연결, 폴더 구조(design.md 1.5), Hardhat 초기화, Docker Compose로 PostgreSQL 실행(named volume, `restart: unless-stopped`), `.env.example`, `.gitignore`, README 뼈대(design.md 1.7 섹션 구성)
 - [x] **1단계. 설계 확정** — 완료 (`docs/design.md`)
 - [ ] **2단계. 스마트 컨트랙트 + 단위 테스트** — MockNFT → createAuction → bid → reveal → finalize → withdraw → cancel → 비정상 상황 → 보안 점검. design.md 9.1 전체 통과, 커버리지 90% 이상
 - [ ] **3단계. Client Script** — design.md 7.5. `scenario.ts`로 전체 흐름 실행
