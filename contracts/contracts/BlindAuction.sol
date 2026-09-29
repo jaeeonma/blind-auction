@@ -205,6 +205,68 @@ contract BlindAuction is ReentrancyGuard {
         emit BidCommitted(auctionId, msg.sender, bidIndex, seq, commitment, msg.value);
     }
 
+    /// @notice 공개 단계에 입찰 원문(value, fake, salt)을 제출해 commitment와 대조한다.
+    /// @dev 입찰자 주소는 파라미터로 받지 않고 msg.sender만 쓴다.
+    ///      - 조회: bids[auctionId][msg.sender] → 본인 입찰 목록에서만 찾으므로 남의 입찰을 공개할 수 없다.
+    ///      - 해시: msg.sender를 넣어 계산하므로 남의 commitment를 복사해 제출해도
+    ///        복사한 사람은 같은 해시를 만들 수 없다 (design.md 8.2 Commitment 복사).
+    ///      입찰자 전체를 다시 돌지 않도록, 공개될 때마다 최고가를 즉시 갱신한다 (design.md 2.4).
+    function reveal(uint256 auctionId, uint256 bidIndex, uint256 value, bool fake, bytes32 salt) external {
+        // [Checks]
+        Auction storage a = _getAuction(auctionId);
+        if (_phase(a) != Phase.Reveal) revert InvalidPhase();
+
+        Bid[] storage myBids = bids[auctionId][msg.sender];
+        if (bidIndex >= myBids.length) revert BidNotFound();
+        Bid storage b = myBids[bidIndex];
+        if (b.revealed) revert AlreadyRevealed(); // 같은 입찰을 두 번 공개해 반환금을 두 번 받는 것을 막는다.
+
+        // 입찰 때와 같은 인코딩으로 해시를 다시 계산한다 (design.md 2.2).
+        // address(this)와 auctionId가 들어 있어 다른 배포·다른 경매의 commitment는 통과하지 못한다.
+        bytes32 expected = keccak256(abi.encode(address(this), auctionId, msg.sender, value, fake, salt));
+        if (expected != b.commitment) revert CommitmentMismatch();
+
+        // [Effects] 이 함수는 외부 호출이 없다. ETH는 여기서 보내지 않고 적립만 한다 (Pull 방식).
+        b.revealed = true;
+        a.revealedDeposits += b.deposit; // 몰수액 = totalDeposits - revealedDeposits (finalize에서 사용)
+        uint256 refund = b.deposit;
+
+        // 유효성 판정 (design.md 2.3). 무효 입찰은 보증금 전액을 돌려받는다.
+        InvalidReason reason;
+        if (fake) {
+            reason = InvalidReason.Fake;
+        } else if (b.deposit < value) {
+            reason = InvalidReason.InsufficientDeposit;
+        } else if (value == 0 || value < a.reservePrice) {
+            reason = InvalidReason.BelowReserve;
+        } else {
+            reason = InvalidReason.None;
+        }
+
+        // 최고가 갱신. 동점이면 seq(제출 순번)가 작은 입찰이 이긴다 → 공개 순서와 무관 (design.md 2.4).
+        // value > 0이 보장되므로 최고가가 없는 상태(highestBid == 0)에서는 항상 첫 번째 조건으로 들어온다.
+        if (
+            reason == InvalidReason.None &&
+            (value > a.highestBid || (value == a.highestBid && b.seq < a.highestBidSeq))
+        ) {
+            // 밀려난 이전 최고가 입찰의 금액을 그 입찰자에게 적립한다.
+            // 이전 최고가 입찰자가 msg.sender 본인일 수도 있다 (한 사람의 여러 입찰).
+            if (a.highestBidder != address(0)) {
+                pendingWithdrawals[a.highestBidder] += a.highestBid;
+            }
+            a.highestBidder = msg.sender;
+            a.highestBid = value;
+            a.highestBidSeq = b.seq;
+            // 최고가 입찰의 금액(value)은 낙찰 대금으로 컨트랙트에 남겨 두고, 차액만 돌려준다.
+            // 유효 입찰이면 deposit >= value가 보장되므로 음수가 되지 않는다.
+            refund -= value;
+            emit HighestBidUpdated(auctionId, msg.sender, value);
+        }
+
+        pendingWithdrawals[msg.sender] += refund;
+        emit BidRevealed(auctionId, msg.sender, bidIndex, value, fake, reason, refund);
+    }
+
     // ─────────────────────────────────────────────────────────────
     // 조회 함수 (design.md 4.4)
     // ─────────────────────────────────────────────────────────────
