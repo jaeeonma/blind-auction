@@ -20,6 +20,6 @@ coverage.json
 dist/
 
 # Local editor / tool settings
-.claude/settings.local.json
+.claude/
 .vscode/
 *.log
