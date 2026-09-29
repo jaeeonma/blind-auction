@@ -177,6 +177,34 @@ contract BlindAuction is ReentrancyGuard {
         IERC721(nft).transferFrom(msg.sender, address(this), tokenId);
     }
 
+    /// @notice 입찰 단계에 commitment(해시)와 보증금(ETH)을 제출한다.
+    /// @dev commitment = keccak256(abi.encode(address(this), auctionId, bidder, value, fake, salt))
+    ///      실제 금액(value)은 공개 단계 전까지 드러나지 않는다.
+    ///      보증금(msg.value)은 누구나 볼 수 있으므로 입찰가보다 크게 넣거나(초과 보증금),
+    ///      fake 입찰을 섞어 입찰가를 추측하기 어렵게 한다 (design.md 2.2).
+    ///      같은 주소가 여러 번 입찰할 수 있다 (가짜 입찰을 섞기 위해 필요, design.md 2.5).
+    function bid(uint256 auctionId, bytes32 commitment) external payable {
+        // [Checks] 상태 확인을 가장 먼저 한다 (design.md 8.1).
+        Auction storage a = _getAuction(auctionId);
+        if (_phase(a) != Phase.Bidding) revert InvalidPhase();
+        if (msg.sender == a.seller) revert SellerCannotBid();
+        if (msg.value == 0) revert ZeroDeposit();
+
+        // [Effects] 외부 호출이 없는 함수라 재진입 위험이 없다.
+        // seq는 모든 경매에서 공유하는 전역 순번이고 1부터 시작한다.
+        // 동점일 때 "먼저 제출된 입찰"을 가리는 기준이 된다 (design.md 2.4).
+        uint256 seq = ++bidSeq;
+        Bid[] storage myBids = bids[auctionId][msg.sender];
+        uint256 bidIndex = myBids.length;
+        myBids.push(Bid({commitment: commitment, deposit: msg.value, seq: seq, revealed: false}));
+
+        // 몰수액을 반복문 없이 계산하기 위해 합계를 누적한다 (design.md 4.2).
+        a.totalDeposits += msg.value;
+        a.bidCount += 1;
+
+        emit BidCommitted(auctionId, msg.sender, bidIndex, seq, commitment, msg.value);
+    }
+
     // ─────────────────────────────────────────────────────────────
     // 조회 함수 (design.md 4.4)
     // ─────────────────────────────────────────────────────────────
@@ -188,6 +216,18 @@ contract BlindAuction is ReentrancyGuard {
     /// @notice 현재 경매 상태 (design.md 3.1)
     function phaseOf(uint256 auctionId) external view returns (Phase) {
         return _phase(_getAuction(auctionId));
+    }
+
+    function getBid(uint256 auctionId, address bidder, uint256 bidIndex) external view returns (Bid memory) {
+        _getAuction(auctionId);
+        Bid[] storage list = bids[auctionId][bidder];
+        if (bidIndex >= list.length) revert BidNotFound();
+        return list[bidIndex];
+    }
+
+    function bidCountOf(uint256 auctionId, address bidder) external view returns (uint256) {
+        _getAuction(auctionId);
+        return bids[auctionId][bidder].length;
     }
 
     // ─────────────────────────────────────────────────────────────
