@@ -25,7 +25,7 @@ describe("BlindAuction: reveal", function () {
       await expect(tx).to.emit(auction, "HighestBidUpdated").withArgs(auctionId, alice.address, eth("3"));
       await expect(tx)
         .to.emit(auction, "BidRevealed")
-        .withArgs(auctionId, alice.address, 0n, eth("3"), false, InvalidReason.None, eth("2"));
+        .withArgs(auctionId, alice.address, eth("3"), false, InvalidReason.None, eth("2"));
       // reveal only credits pendingWithdrawals; no ETH leaves the contract (Pull payment).
       await expect(tx).to.changeEtherBalances([alice, auction], [0n, 0n]);
 
@@ -35,21 +35,15 @@ describe("BlindAuction: reveal", function () {
       expect(a.highestBidSeq).to.equal(1n);
       expect(a.revealedDeposits).to.equal(eth("5"));
       expect(await auction.pendingWithdrawals(alice.address)).to.equal(eth("2"));
-      expect((await auction.getBid(auctionId, alice.address, 0n)).revealed).to.equal(true);
+      expect((await auction.getBid(auctionId, alice.address)).revealed).to.equal(true);
     });
 
-    it("reverts with CommitmentMismatch when value, fake, salt or bidIndex differ", async function () {
+    it("reverts with CommitmentMismatch when value, fake or salt differ", async function () {
       const { auction, auctionId, alice, biddingEnd } = await loadFixture(auctionCreatedFixture);
       const s = await placeBid(auction, auctionId, alice, eth("3"), eth("5"));
-      await placeBid(auction, auctionId, alice, eth("1"), eth("1")); // bidIndex 1
       await time.increaseTo(biddingEnd);
 
-      const wrong: Array<Partial<SecretBid>> = [
-        { value: eth("4") },
-        { fake: true },
-        { salt: randomSalt() },
-        { bidIndex: 1n },
-      ];
+      const wrong: Array<Partial<SecretBid>> = [{ value: eth("4") }, { fake: true }, { salt: randomSalt() }];
       for (const w of wrong) {
         await expect(revealBid(auction, auctionId, { ...s, ...w })).to.be.revertedWithCustomError(
           auction,
@@ -103,14 +97,14 @@ describe("BlindAuction: reveal", function () {
         "BidNotFound",
       );
 
-      expect((await auction.getBid(auctionId, alice.address, 0n)).revealed).to.equal(false);
+      expect((await auction.getBid(auctionId, alice.address)).revealed).to.equal(false);
       await expect(revealBid(auction, auctionId, aliceBid)).to.emit(auction, "BidRevealed");
     });
 
     it("bob copying alice's commitment cannot reveal it with alice's values (CommitmentMismatch)", async function () {
       const { auction, auctionId, alice, bob, biddingEnd } = await loadFixture(auctionCreatedFixture);
       const aliceBid = await placeBid(auction, auctionId, alice, eth("3"), eth("5"));
-      const copied = (await auction.getBid(auctionId, alice.address, 0n)).commitment;
+      const copied = (await auction.getBid(auctionId, alice.address)).commitment;
 
       // bob submits the exact same commitment (visible on-chain) with his own deposit.
       await auction.connect(bob).bid(auctionId, copied, { value: eth("5") });
@@ -150,7 +144,7 @@ describe("BlindAuction: reveal", function () {
         const tx = revealBid(auction, auctionId, s);
         await expect(tx)
           .to.emit(auction, "BidRevealed")
-          .withArgs(auctionId, alice.address, 0n, c.value, c.fake, c.reason, c.deposit);
+          .withArgs(auctionId, alice.address, c.value, c.fake, c.reason, c.deposit);
         await expect(tx).not.to.emit(auction, "HighestBidUpdated");
 
         const a = await auction.getAuction(auctionId);
@@ -167,7 +161,7 @@ describe("BlindAuction: reveal", function () {
 
       await expect(revealBid(auction, auctionId, s))
         .to.emit(auction, "BidRevealed")
-        .withArgs(auctionId, alice.address, 0n, 0n, false, InvalidReason.None, eth("1"));
+        .withArgs(auctionId, alice.address, 0n, false, InvalidReason.None, eth("1"));
       const a = await auction.getAuction(auctionId);
       expect(a.highestBidder).to.equal(alice.address);
       expect(a.highestBid).to.equal(0n);
@@ -180,7 +174,7 @@ describe("BlindAuction: reveal", function () {
 
       await expect(revealBid(auction, auctionId, s))
         .to.emit(auction, "BidRevealed")
-        .withArgs(auctionId, alice.address, 0n, eth("1"), false, InvalidReason.None, 0n);
+        .withArgs(auctionId, alice.address, eth("1"), false, InvalidReason.None, 0n);
     });
   });
 
@@ -195,7 +189,7 @@ describe("BlindAuction: reveal", function () {
       const tx = revealBid(auction, auctionId, aliceBid);
       await expect(tx)
         .to.emit(auction, "BidRevealed")
-        .withArgs(auctionId, alice.address, 0n, eth("3"), false, InvalidReason.None, eth("5"));
+        .withArgs(auctionId, alice.address, eth("3"), false, InvalidReason.None, eth("5"));
       await expect(tx).not.to.emit(auction, "HighestBidUpdated");
 
       expect((await auction.getAuction(auctionId)).highestBidder).to.equal(bob.address);
@@ -263,36 +257,6 @@ describe("BlindAuction: reveal", function () {
         expect(await auction.pendingWithdrawals(alice.address)).to.equal(0n);
       });
     });
-
-    it("the same bidder's two valid bids becoming highest in turn are credited exactly", async function () {
-      const { auction, auctionId, alice, bob, biddingEnd } = await loadFixture(auctionCreatedFixture);
-      const a1 = await placeBid(auction, auctionId, alice, eth("2"), eth("3"));
-      const a2 = await placeBid(auction, auctionId, alice, eth("4"), eth("5"));
-      const b1 = await placeBid(auction, auctionId, bob, eth("5"), eth("5"));
-      await time.increaseTo(biddingEnd);
-
-      await revealBid(auction, auctionId, a1);
-      // excess of a1: 3 - 2
-      expect(await auction.pendingWithdrawals(alice.address)).to.equal(eth("1"));
-
-      await expect(revealBid(auction, auctionId, a2))
-        .to.emit(auction, "HighestBidUpdated")
-        .withArgs(auctionId, alice.address, eth("4"));
-      // + a1 displaced (2) + excess of a2 (5 - 4)
-      expect(await auction.pendingWithdrawals(alice.address)).to.equal(eth("4"));
-      let a = await auction.getAuction(auctionId);
-      expect(a.highestBidder).to.equal(alice.address);
-      expect(a.highestBid).to.equal(eth("4"));
-      expect(a.highestBidSeq).to.equal(2n); // a2 was the second commit overall
-
-      await revealBid(auction, auctionId, b1);
-      // + a2 displaced (4) → alice gets back all 8 ETH she deposited
-      expect(await auction.pendingWithdrawals(alice.address)).to.equal(eth("8"));
-      expect(await auction.pendingWithdrawals(bob.address)).to.equal(0n);
-      a = await auction.getAuction(auctionId);
-      expect(a.highestBidder).to.equal(bob.address);
-      expect(a.highestBid).to.equal(eth("5"));
-    });
   });
 
   describe("balance invariant", function () {
@@ -317,39 +281,42 @@ describe("BlindAuction: reveal", function () {
       expect(balance).to.equal(pending + a.highestBid + unrevealedSum);
     }
 
-    it("holds after every reveal (design.md 2.6 example + tie + invalid bids)", async function () {
-      const { auction, auctionId, seller, alice, bob, carol, other, biddingEnd } =
-        await loadFixture(auctionCreatedFixture);
-      const accounts = [seller, alice, bob, carol, other];
+    it("holds after every reveal (tie + invalid bids + an unrevealed bid)", async function () {
+      const { auction, auctionId, seller, biddingEnd } = await loadFixture(auctionCreatedFixture);
+      // One bid per wallet, so each case uses its own signer (fixture uses signers 0-4).
+      const [w1, w2, w3, w4, w5, w6, w7] = (await ethers.getSigners()).slice(5, 12);
+      const accounts = [seller, w1, w2, w3, w4, w5, w6, w7];
 
-      const aliceValid = await placeBid(auction, auctionId, alice, eth("3"), eth("5"));
-      const bobFake = await placeBid(auction, auctionId, bob, eth("0"), eth("2"), true);
-      const bobValid = await placeBid(auction, auctionId, bob, eth("4"), eth("4"));
-      const carolHidden = await placeBid(auction, auctionId, carol, eth("2"), eth("2")); // never revealed
-      const otherTie = await placeBid(auction, auctionId, other, eth("4"), eth("6")); // ties bob, later seq
-      const aliceLow = await placeBid(auction, auctionId, alice, eth("0.5"), eth("1")); // valid but lower
-      const carolShort = await placeBid(auction, auctionId, carol, eth("3"), eth("1")); // deposit < value
+      const first = await placeBid(auction, auctionId, w1, eth("3"), eth("5")); // seq 1
+      const fake = await placeBid(auction, auctionId, w2, eth("0"), eth("2"), true); // seq 2
+      const winner = await placeBid(auction, auctionId, w3, eth("4"), eth("4")); // seq 3
+      const hidden = await placeBid(auction, auctionId, w4, eth("2"), eth("2")); // seq 4, never revealed
+      const tie = await placeBid(auction, auctionId, w5, eth("4"), eth("6")); // seq 5, ties w3
+      const low = await placeBid(auction, auctionId, w6, eth("0.5"), eth("1")); // valid but lower
+      const short = await placeBid(auction, auctionId, w7, eth("3"), eth("1")); // deposit < value
 
-      const unrevealed = [aliceValid, bobFake, bobValid, carolHidden, otherTie, aliceLow, carolShort];
+      const unrevealed = [first, fake, winner, hidden, tie, low, short];
       await time.increaseTo(biddingEnd);
       await expectInvariant(auction, auctionId, accounts, unrevealed);
 
-      const order = [aliceValid, bobFake, otherTie, bobValid, aliceLow, carolShort];
+      const order = [first, fake, tie, winner, low, short];
       for (const s of order) {
         await revealBid(auction, auctionId, s);
         unrevealed.splice(unrevealed.indexOf(s), 1);
         await expectInvariant(auction, auctionId, accounts, unrevealed);
       }
 
-      // Final state: bob wins the tie against `other` with the earlier seq.
+      // Final state: w3 wins the tie against w5 with the earlier seq.
       const a = await auction.getAuction(auctionId);
-      expect(a.highestBidder).to.equal(bob.address);
+      expect(a.highestBidder).to.equal(w3.address);
       expect(a.highestBid).to.equal(eth("4"));
-      expect(await auction.pendingWithdrawals(alice.address)).to.equal(eth("6")); // 2 + 3 + 1
-      expect(await auction.pendingWithdrawals(bob.address)).to.equal(eth("2")); // fake 2 + excess 0
-      expect(await auction.pendingWithdrawals(other.address)).to.equal(eth("6")); // 2 + 4 displaced
-      expect(await auction.pendingWithdrawals(carol.address)).to.equal(eth("1")); // short bid refund
-      expect(unrevealed).to.deep.equal([carolHidden]); // 2 ETH to be forfeited at finalize
+      expect(await auction.pendingWithdrawals(w1.address)).to.equal(eth("5")); // excess 2 + displaced 3
+      expect(await auction.pendingWithdrawals(w2.address)).to.equal(eth("2")); // fake
+      expect(await auction.pendingWithdrawals(w3.address)).to.equal(0n); // excess 0
+      expect(await auction.pendingWithdrawals(w5.address)).to.equal(eth("6")); // excess 2 + displaced 4
+      expect(await auction.pendingWithdrawals(w6.address)).to.equal(eth("1")); // lower bid
+      expect(await auction.pendingWithdrawals(w7.address)).to.equal(eth("1")); // short bid
+      expect(unrevealed).to.deep.equal([hidden]); // 2 ETH to be forfeited at finalize
     });
   });
 });

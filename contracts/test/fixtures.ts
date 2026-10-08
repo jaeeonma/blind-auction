@@ -53,7 +53,6 @@ export function randomSalt(): string {
 /** A committed bid together with the secret values the bidder keeps locally. */
 export interface SecretBid {
   bidder: HardhatEthersSigner;
-  bidIndex: bigint;
   value: bigint;
   fake: boolean;
   salt: string;
@@ -69,7 +68,6 @@ export async function placeBid(
   fake = false,
 ): Promise<SecretBid> {
   const salt = randomSalt();
-  const bidIndex = await auction.bidCountOf(auctionId, bidder.address);
   const commitment = computeCommitment(
     await auction.getAddress(),
     auctionId,
@@ -79,11 +77,11 @@ export async function placeBid(
     salt,
   );
   await auction.connect(bidder).bid(auctionId, commitment, { value: deposit });
-  return { bidder, bidIndex, value, fake, salt, deposit };
+  return { bidder, value, fake, salt, deposit };
 }
 
 export function revealBid(auction: BlindAuction, auctionId: bigint, s: SecretBid) {
-  return auction.connect(s.bidder).reveal(auctionId, s.bidIndex, s.value, s.fake, s.salt);
+  return auction.connect(s.bidder).reveal(auctionId, s.value, s.fake, s.salt);
 }
 
 /** Contracts deployed; seller owns token 1 and has approved the auction contract. */

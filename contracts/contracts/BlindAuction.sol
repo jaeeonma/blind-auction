@@ -39,17 +39,17 @@ contract BlindAuction is ReentrancyGuard {
         uint64 revealEnd;
         address highestBidder; // 현재 최고가 입찰자 (없으면 0)
         uint256 highestBid;
-        uint256 highestBidSeq; // 동점 처리용: 최고가 입찰의 제출 순번
+        uint256 highestBidSeq; // 동점 처리용: 최고가 입찰의 입찰 순서
         uint256 totalDeposits; // 모든 입찰 보증금 합계
         uint256 revealedDeposits; // 공개된 입찰 보증금 합계
-        uint32 bidCount;
+        uint32 bidCount; // 입찰 수. 다음 입찰의 순서(seq)를 매기는 데도 쓴다
         bool finalized;
     }
 
     struct Bid {
         bytes32 commitment;
         uint256 deposit;
-        uint256 seq; // 전역 제출 순번 (동점이면 작은 쪽이 낙찰)
+        uint256 seq; // 이 경매 안에서의 입찰 순서 (1부터). 0이면 입찰이 없다는 뜻
         bool revealed;
     }
 
@@ -66,9 +66,9 @@ contract BlindAuction is ReentrancyGuard {
     uint64 public constant MAX_REVEAL_DURATION = 2 days;
 
     uint256 public nextAuctionId;
-    uint256 private bidSeq;
     mapping(uint256 => Auction) private auctions;
-    mapping(uint256 => mapping(address => Bid[])) private bids;
+    /// @dev 지갑당 한 경매에 1회만 입찰하므로 (경매, 입찰자)마다 Bid 하나만 둔다 (design.md 4번 Q10).
+    mapping(uint256 => mapping(address => Bid)) private bids;
     mapping(address => uint256) public pendingWithdrawals;
 
     // ─────────────────────────────────────────────────────────────
@@ -85,18 +85,10 @@ contract BlindAuction is ReentrancyGuard {
         uint64 biddingEnd,
         uint64 revealEnd
     );
-    event BidCommitted(
-        uint256 indexed auctionId,
-        address indexed bidder,
-        uint256 bidIndex,
-        uint256 seq,
-        bytes32 commitment,
-        uint256 deposit
-    );
+    event BidCommitted(uint256 indexed auctionId, address indexed bidder, bytes32 commitment, uint256 deposit);
     event BidRevealed(
         uint256 indexed auctionId,
         address indexed bidder,
-        uint256 bidIndex,
         uint256 value,
         bool fake,
         InvalidReason reason,
@@ -121,8 +113,7 @@ contract BlindAuction is ReentrancyGuard {
     error AuctionNotFound();
     error InvalidDuration();
     error InvalidPhase();
-    error SellerCannotBid();
-    error ZeroDeposit();
+    error AlreadyBid();
     error BidNotFound();
     error AlreadyRevealed();
     error CommitmentMismatch();
@@ -171,48 +162,46 @@ contract BlindAuction is ReentrancyGuard {
         IERC721(nft).transferFrom(msg.sender, address(this), tokenId);
     }
 
-    /// @notice 입찰 단계에 commitment(해시)와 보증금(ETH)을 제출한다.
-    /// @dev commitment = keccak256(abi.encode(address(this), auctionId, bidder, value, fake, salt))
-    ///      실제 금액(value)은 공개 단계 전까지 드러나지 않는다.
-    ///      보증금(msg.value)은 누구나 볼 수 있으므로 입찰가보다 크게 넣거나(초과 보증금),
-    ///      fake 입찰을 섞어 입찰가를 추측하기 어렵게 한다 (design.md 2.2).
-    ///      같은 주소가 여러 번 입찰할 수 있다 (가짜 입찰을 섞기 위해 필요, design.md 2.5).
+    /// @notice 입찰 기간에 해시(commitment)와 보증금(ETH)을 제출한다.
+    /// @dev 입찰가는 해시로만 올라가므로 공개 기간 전까지 드러나지 않는다 (design.md 8번).
+    ///      지갑당 한 경매에 1회만 입찰할 수 있다 (design.md 4번 Q10).
+    ///      판매자의 입찰은 막지 않는다. 다른 지갑으로 입찰하면 우회되므로 막아도 의미가 없다 (Q9).
+    ///      보증금 0도 막지 않는다. 보증금 ≥ 입찰가인지는 공개 때 판정한다 (Q3).
     function bid(uint256 auctionId, bytes32 commitment) external payable {
-        // [Checks] 상태 확인을 가장 먼저 한다 (design.md 8.1).
+        // [Checks] 단계 검사를 가장 먼저 한다 (design.md 13번 "잘못된 상태").
         Auction storage a = _getAuction(auctionId);
         if (_phase(a) != Phase.Bidding) revert InvalidPhase();
-        if (msg.sender == a.seller) revert SellerCannotBid();
-        if (msg.value == 0) revert ZeroDeposit();
+        Bid storage b = bids[auctionId][msg.sender];
+        // seq는 1부터 매기므로 0이 아니면 이미 입찰한 지갑이다 (design.md 13번 "중복 실행").
+        // 보증금 0 입찰도 있을 수 있어서 deposit이 아니라 seq로 확인한다.
+        if (b.seq != 0) revert AlreadyBid();
 
         // [Effects] 외부 호출이 없는 함수라 재진입 위험이 없다.
-        // seq는 모든 경매에서 공유하는 전역 순번이고 1부터 시작한다.
-        // 동점일 때 "먼저 제출된 입찰"을 가리는 기준이 된다 (design.md 2.4).
-        uint256 seq = ++bidSeq;
-        Bid[] storage myBids = bids[auctionId][msg.sender];
-        uint256 bidIndex = myBids.length;
-        myBids.push(Bid({commitment: commitment, deposit: msg.value, seq: seq, revealed: false}));
-
-        // 몰수액을 반복문 없이 계산하기 위해 합계를 누적한다 (design.md 4.2).
-        a.totalDeposits += msg.value;
+        // 입찰 순서를 저장해 두고, 동점이면 먼저 입찰한 쪽이 이긴다 (design.md 7번, Q5).
         a.bidCount += 1;
+        b.commitment = commitment;
+        b.deposit = msg.value;
+        b.seq = a.bidCount;
 
-        emit BidCommitted(auctionId, msg.sender, bidIndex, seq, commitment, msg.value);
+        // 몰수금을 반복문 없이 계산하기 위해 보증금 합계를 누적한다 (design.md 7번).
+        a.totalDeposits += msg.value;
+
+        emit BidCommitted(auctionId, msg.sender, commitment, msg.value);
     }
 
     /// @notice 공개 단계에 입찰 원문(value, fake, salt)을 제출해 commitment와 대조한다.
     /// @dev 입찰자 주소는 파라미터로 받지 않고 msg.sender만 쓴다.
-    ///      - 조회: bids[auctionId][msg.sender] → 본인 입찰 목록에서만 찾으므로 남의 입찰을 공개할 수 없다.
+    ///      - 조회: bids[auctionId][msg.sender] → 본인 입찰만 찾으므로 남의 입찰을 공개할 수 없다.
     ///      - 해시: msg.sender를 넣어 계산하므로 남의 commitment를 복사해 제출해도
     ///        복사한 사람은 같은 해시를 만들 수 없다 (design.md 8.2 Commitment 복사).
     ///      입찰자 전체를 다시 돌지 않도록, 공개될 때마다 최고가를 즉시 갱신한다 (design.md 2.4).
-    function reveal(uint256 auctionId, uint256 bidIndex, uint256 value, bool fake, bytes32 salt) external {
+    function reveal(uint256 auctionId, uint256 value, bool fake, bytes32 salt) external {
         // [Checks]
         Auction storage a = _getAuction(auctionId);
         if (_phase(a) != Phase.Reveal) revert InvalidPhase();
 
-        Bid[] storage myBids = bids[auctionId][msg.sender];
-        if (bidIndex >= myBids.length) revert BidNotFound();
-        Bid storage b = myBids[bidIndex];
+        Bid storage b = bids[auctionId][msg.sender];
+        if (b.seq == 0) revert BidNotFound();
         if (b.revealed) revert AlreadyRevealed(); // 같은 입찰을 두 번 공개해 반환금을 두 번 받는 것을 막는다.
 
         // 입찰 때와 같은 인코딩으로 해시를 다시 계산한다 (design.md 2.2).
@@ -245,7 +234,6 @@ contract BlindAuction is ReentrancyGuard {
                 (value == a.highestBid && b.seq < a.highestBidSeq))
         ) {
             // 밀려난 이전 최고가 입찰의 금액을 그 입찰자에게 적립한다.
-            // 이전 최고가 입찰자가 msg.sender 본인일 수도 있다 (한 사람의 여러 입찰).
             if (a.highestBidder != address(0)) {
                 pendingWithdrawals[a.highestBidder] += a.highestBid;
             }
@@ -259,11 +247,11 @@ contract BlindAuction is ReentrancyGuard {
         }
 
         pendingWithdrawals[msg.sender] += refund;
-        emit BidRevealed(auctionId, msg.sender, bidIndex, value, fake, reason, refund);
+        emit BidRevealed(auctionId, msg.sender, value, fake, reason, refund);
     }
 
     // ─────────────────────────────────────────────────────────────
-    // 조회 함수 (design.md 4.4)
+    // 조회 함수 (테스트와 사용자 스크립트용)
     // ─────────────────────────────────────────────────────────────
 
     function getAuction(uint256 auctionId) external view returns (Auction memory) {
@@ -275,16 +263,10 @@ contract BlindAuction is ReentrancyGuard {
         return _phase(_getAuction(auctionId));
     }
 
-    function getBid(uint256 auctionId, address bidder, uint256 bidIndex) external view returns (Bid memory) {
+    function getBid(uint256 auctionId, address bidder) external view returns (Bid memory b) {
         _getAuction(auctionId);
-        Bid[] storage list = bids[auctionId][bidder];
-        if (bidIndex >= list.length) revert BidNotFound();
-        return list[bidIndex];
-    }
-
-    function bidCountOf(uint256 auctionId, address bidder) external view returns (uint256) {
-        _getAuction(auctionId);
-        return bids[auctionId][bidder].length;
+        b = bids[auctionId][bidder];
+        if (b.seq == 0) revert BidNotFound();
     }
 
     // ─────────────────────────────────────────────────────────────
