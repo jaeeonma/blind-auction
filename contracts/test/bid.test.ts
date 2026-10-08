@@ -6,21 +6,14 @@ import {
   REVEAL_DURATION,
   auctionCreatedFixture,
   computeCommitment,
-  randomSalt,
+  randomSecret,
 } from "./fixtures";
 
 describe("BlindAuction: bid", function () {
   it("stores the commitment and deposit and emits BidCommitted", async function () {
-    const { auction, auctionId, auctionAddress, alice } = await loadFixture(auctionCreatedFixture);
+    const { auction, auctionId, alice } = await loadFixture(auctionCreatedFixture);
     const deposit = ethers.parseEther("5");
-    const commitment = computeCommitment(
-      auctionAddress,
-      auctionId,
-      alice.address,
-      ethers.parseEther("3"),
-      false,
-      randomSalt(),
-    );
+    const commitment = computeCommitment(ethers.parseEther("3"), randomSecret(), alice.address);
 
     const tx = auction.connect(alice).bid(auctionId, commitment, { value: deposit });
 

@@ -22,40 +22,22 @@ export const Phase = {
   Finalized: 3n,
 } as const;
 
-// InvalidReason enum values in BlindAuction.sol
-export const InvalidReason = {
-  None: 0n,
-  Fake: 1n,
-  InsufficientDeposit: 2n,
-} as const;
-
-/** Same encoding as design.md 2.2 — must match the contract's reveal check. */
-export function computeCommitment(
-  contract: string,
-  auctionId: bigint,
-  bidder: string,
-  value: bigint,
-  fake: boolean,
-  salt: string,
-): string {
+/** Hash = value + secret + bidder (design.md 4번 Q11) — must match the contract's reveal check. */
+export function computeCommitment(value: bigint, secret: string, bidder: string): string {
   return ethers.keccak256(
-    ethers.AbiCoder.defaultAbiCoder().encode(
-      ["address", "uint256", "address", "uint256", "bool", "bytes32"],
-      [contract, auctionId, bidder, value, fake, salt],
-    ),
+    ethers.AbiCoder.defaultAbiCoder().encode(["uint256", "bytes32", "address"], [value, secret, bidder]),
   );
 }
 
-export function randomSalt(): string {
+export function randomSecret(): string {
   return ethers.hexlify(ethers.randomBytes(32));
 }
 
-/** A committed bid together with the secret values the bidder keeps locally. */
+/** A committed bid together with the values the bidder keeps locally. */
 export interface SecretBid {
   bidder: HardhatEthersSigner;
   value: bigint;
-  fake: boolean;
-  salt: string;
+  secret: string;
   deposit: bigint;
 }
 
@@ -65,23 +47,15 @@ export async function placeBid(
   bidder: HardhatEthersSigner,
   value: bigint,
   deposit: bigint,
-  fake = false,
 ): Promise<SecretBid> {
-  const salt = randomSalt();
-  const commitment = computeCommitment(
-    await auction.getAddress(),
-    auctionId,
-    bidder.address,
-    value,
-    fake,
-    salt,
-  );
+  const secret = randomSecret();
+  const commitment = computeCommitment(value, secret, bidder.address);
   await auction.connect(bidder).bid(auctionId, commitment, { value: deposit });
-  return { bidder, value, fake, salt, deposit };
+  return { bidder, value, secret, deposit };
 }
 
 export function revealBid(auction: BlindAuction, auctionId: bigint, s: SecretBid) {
-  return auction.connect(s.bidder).reveal(auctionId, s.value, s.fake, s.salt);
+  return auction.connect(s.bidder).reveal(auctionId, s.value, s.secret);
 }
 
 /** Contracts deployed; seller owns token 1 and has approved the auction contract. */

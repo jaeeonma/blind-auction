@@ -25,12 +25,6 @@ contract BlindAuction is ReentrancyGuard {
         Finalized // 종료
     }
 
-    enum InvalidReason {
-        None,
-        Fake,
-        InsufficientDeposit
-    }
-
     struct Auction {
         address seller;
         address nft;
@@ -86,15 +80,8 @@ contract BlindAuction is ReentrancyGuard {
         uint64 revealEnd
     );
     event BidCommitted(uint256 indexed auctionId, address indexed bidder, bytes32 commitment, uint256 deposit);
-    event BidRevealed(
-        uint256 indexed auctionId,
-        address indexed bidder,
-        uint256 value,
-        bool fake,
-        InvalidReason reason,
-        uint256 refund
-    );
-    event HighestBidUpdated(uint256 indexed auctionId, address indexed bidder, uint256 amount);
+    /// @dev valid = 보증금 ≥ 입찰가. 낙찰·패찰은 종료됨 이벤트의 winner로 정한다 (design.md 6번).
+    event BidRevealed(uint256 indexed auctionId, address indexed bidder, uint256 value, bool valid);
     /// @dev 유찰이면 winner = address(0), winningBid = 0
     event AuctionFinalized(
         uint256 indexed auctionId,
@@ -189,65 +176,62 @@ contract BlindAuction is ReentrancyGuard {
         emit BidCommitted(auctionId, msg.sender, commitment, msg.value);
     }
 
-    /// @notice 공개 단계에 입찰 원문(value, fake, salt)을 제출해 commitment와 대조한다.
-    /// @dev 입찰자 주소는 파라미터로 받지 않고 msg.sender만 쓴다.
+    /// @notice 공개 기간에 입찰가와 secret을 제출해 입찰 때 낸 해시와 대조한다.
+    /// @dev 입찰자 주소는 파라미터로 받지 않고 msg.sender만 쓴다 (design.md 5번).
     ///      - 조회: bids[auctionId][msg.sender] → 본인 입찰만 찾으므로 남의 입찰을 공개할 수 없다.
-    ///      - 해시: msg.sender를 넣어 계산하므로 남의 commitment를 복사해 제출해도
-    ///        복사한 사람은 같은 해시를 만들 수 없다 (design.md 8.2 Commitment 복사).
-    ///      입찰자 전체를 다시 돌지 않도록, 공개될 때마다 최고가를 즉시 갱신한다 (design.md 2.4).
-    function reveal(uint256 auctionId, uint256 value, bool fake, bytes32 salt) external {
+    ///      - 해시: msg.sender를 넣어 다시 계산하므로, 남의 해시를 복사해 입찰한 사람은
+    ///        입찰가와 secret을 알아내도 같은 해시를 만들 수 없다 (design.md 4번 Q11).
+    ///      반환은 종료 때가 아니라 지금 장부에 적는다. 공개는 한 명씩 들어오므로
+    ///      종료 때 입찰자 전체를 반복문으로 돌 필요가 없다 (design.md 7번).
+    function reveal(uint256 auctionId, uint256 value, bytes32 secret) external {
         // [Checks]
         Auction storage a = _getAuction(auctionId);
-        if (_phase(a) != Phase.Reveal) revert InvalidPhase();
+        if (_phase(a) != Phase.Reveal) revert InvalidPhase(); // 공개 기간에만 (design.md 13번 "잘못된 상태")
 
         Bid storage b = bids[auctionId][msg.sender];
         if (b.seq == 0) revert BidNotFound();
-        if (b.revealed) revert AlreadyRevealed(); // 같은 입찰을 두 번 공개해 반환금을 두 번 받는 것을 막는다.
+        // "공개했음" 표시로 같은 입찰을 두 번 공개해 반환금을 두 번 받는 것을 막는다 (design.md 13번 "중복 실행").
+        if (b.revealed) revert AlreadyRevealed();
 
-        // 입찰 때와 같은 인코딩으로 해시를 다시 계산한다 (design.md 2.2).
-        // address(this)와 auctionId가 들어 있어 다른 배포·다른 경매의 commitment는 통과하지 못한다.
-        bytes32 expected = keccak256(abi.encode(address(this), auctionId, msg.sender, value, fake, salt));
+        // 해시 = 입찰가 + secret + 입찰자 주소 (design.md 4번 Q11). 입찰 스크립트와 같은 인코딩이어야 한다.
+        bytes32 expected = keccak256(abi.encode(value, secret, msg.sender));
         if (expected != b.commitment) revert CommitmentMismatch();
 
-        // [Effects] 이 함수는 외부 호출이 없다. ETH는 여기서 보내지 않고 적립만 한다 (Pull 방식).
+        // [Effects] 이 함수는 외부 호출이 없다. ETH는 여기서 보내지 않고 장부에 적기만 한다 (Pull 방식).
         b.revealed = true;
-        a.revealedDeposits += b.deposit; // 몰수액 = totalDeposits - revealedDeposits (finalize에서 사용)
-        uint256 refund = b.deposit;
+        // 몰수금 = totalDeposits − revealedDeposits (finalize에서 반복문 없이 계산, design.md 7번)
+        a.revealedDeposits += b.deposit;
 
-        // 유효성 판정 (design.md 2.3). 무효 입찰은 보증금 전액을 돌려받는다.
-        InvalidReason reason;
-        if (fake) {
-            reason = InvalidReason.Fake;
-        } else if (b.deposit < value) {
-            reason = InvalidReason.InsufficientDeposit;
-        } else {
-            reason = InvalidReason.None;
-        }
+        // 보증금이 입찰가 이상이면 유효, 아니면 무효 (design.md 4번 Q3).
+        // 최저가가 없으므로 입찰가 0도 유효하다.
+        bool valid = b.deposit >= value;
 
-        // 최고가 갱신. 동점이면 seq(제출 순번)가 작은 입찰이 이긴다 → 공개 순서와 무관 (design.md 2.4).
-        // 최저가가 없어서 입찰가 0도 유효하다. 그래서 "최고가가 아직 없음"을 금액(0)이 아니라
-        // highestBidder == address(0)으로 따로 확인한다. 이 조건이 없으면 첫 유효 입찰이 0일 때 최고가가 되지 못한다.
-        if (
-            reason == InvalidReason.None &&
+        // 이번 입찰이 새 최고가인가? 동점이면 입찰 순서(seq)가 빠른 쪽이 이긴다.
+        // 공개 순서와는 무관하다: 먼저 입찰한 사람이 나중에 공개해도 동점이면 이긴다 (design.md 4번 Q5, 7번).
+        // 입찰가 0도 유효하므로 "최고가가 아직 없음"은 금액(0)이 아니라 highestBidder == address(0)으로 확인한다.
+        bool isNewHighest = valid &&
             (a.highestBidder == address(0) ||
                 value > a.highestBid ||
-                (value == a.highestBid && b.seq < a.highestBidSeq))
-        ) {
-            // 밀려난 이전 최고가 입찰의 금액을 그 입찰자에게 적립한다.
-            if (a.highestBidder != address(0)) {
-                pendingWithdrawals[a.highestBidder] += a.highestBid;
+                (value == a.highestBid && b.seq < a.highestBidSeq));
+
+        // design.md 7번 표대로 장부에 적는다.
+        if (isNewHighest) {
+            // 새 최고가: 본인 보증금은 낙찰 대금으로 컨트랙트에 남겨 둔다 (차액은 종료 때 장부에 적는다).
+            // 밀려난 이전 최고가에게는 보증금 전액을 적는다.
+            // 지갑당 입찰이 하나뿐이라 (경매, 주소)로 그 사람의 보증금을 바로 찾을 수 있다.
+            address previous = a.highestBidder;
+            if (previous != address(0)) {
+                pendingWithdrawals[previous] += bids[auctionId][previous].deposit;
             }
             a.highestBidder = msg.sender;
             a.highestBid = value;
             a.highestBidSeq = b.seq;
-            // 최고가 입찰의 금액(value)은 낙찰 대금으로 컨트랙트에 남겨 두고, 차액만 돌려준다.
-            // 유효 입찰이면 deposit >= value가 보장되므로 음수가 되지 않는다.
-            refund -= value;
-            emit HighestBidUpdated(auctionId, msg.sender, value);
+        } else {
+            // 무효이거나, 유효하지만 현재 최고가에 졌다: 본인 보증금 전액을 적는다 (design.md 4번 Q3-1).
+            pendingWithdrawals[msg.sender] += b.deposit;
         }
 
-        pendingWithdrawals[msg.sender] += refund;
-        emit BidRevealed(auctionId, msg.sender, value, fake, reason, refund);
+        emit BidRevealed(auctionId, msg.sender, value, valid);
     }
 
     // ─────────────────────────────────────────────────────────────
