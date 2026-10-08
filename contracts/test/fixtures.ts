@@ -2,18 +2,24 @@ import { ethers } from "hardhat";
 import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import type { BlindAuction } from "../typechain-types";
 
-export const RESERVE_PRICE = ethers.parseEther("1");
-export const BIDDING_DURATION = 24n * 60n * 60n; // 1 day
-export const REVEAL_DURATION = 24n * 60n * 60n; // 1 day
+export const MINUTE = 60n;
+export const DAY = 24n * 60n * 60n;
+
+// Duration limits in BlindAuction.sol (design.md 4번 Q2)
+export const MIN_BIDDING_DURATION = 10n * MINUTE;
+export const MAX_BIDDING_DURATION = 5n * DAY;
+export const MIN_REVEAL_DURATION = 1n * DAY;
+export const MAX_REVEAL_DURATION = 2n * DAY;
+
+export const BIDDING_DURATION = 1n * DAY;
+export const REVEAL_DURATION = 1n * DAY;
 
 // Phase enum values in BlindAuction.sol
 export const Phase = {
   Bidding: 0n,
   Reveal: 1n,
   AwaitingFinalize: 2n,
-  Settled: 3n,
-  NoWinner: 4n,
-  Cancelled: 5n,
+  Finalized: 3n,
 } as const;
 
 // InvalidReason enum values in BlindAuction.sol
@@ -21,7 +27,6 @@ export const InvalidReason = {
   None: 0n,
   Fake: 1n,
   InsufficientDeposit: 2n,
-  BelowReserve: 3n,
 } as const;
 
 /** Same encoding as design.md 2.2 — must match the contract's reveal check. */
@@ -93,14 +98,12 @@ export async function deployFixture() {
   return { nft, auction, seller, alice, bob, carol, other };
 }
 
-/** deployFixture + auction 0 created with the default reserve price and durations. */
+/** deployFixture + auction 0 created with the default durations. */
 export async function auctionCreatedFixture() {
   const base = await deployFixture();
   const { nft, auction, seller } = base;
 
-  await auction
-    .connect(seller)
-    .createAuction(await nft.getAddress(), 1n, RESERVE_PRICE, BIDDING_DURATION, REVEAL_DURATION);
+  await auction.connect(seller).createAuction(await nft.getAddress(), 1n, BIDDING_DURATION, REVEAL_DURATION);
   const created = await auction.getAuction(0n);
 
   return {

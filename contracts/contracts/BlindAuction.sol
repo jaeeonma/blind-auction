@@ -6,38 +6,35 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 
 /// @title BlindAuction
 /// @notice Commit-Reveal 방식의 비공개 입찰 경매. NFT를 걸고 ETH로 입찰한다.
-/// @dev 설계 기준: docs/design.md 2~4장, 8장
+/// @dev 설계 기준: docs/design.md 4~7번, 13번
 ///      - 하나의 컨트랙트가 여러 경매를 auctionId로 관리한다 (Indexer가 주소 하나만 감시하면 됨).
-///      - ETH는 Pull 방식으로만 지급한다: pendingWithdrawals에 적립 → 본인이 withdraw.
-///      - 입찰자 전체를 순회하는 반복문을 두지 않는다 (가스 한도 초과 DoS 방지).
+///      - ETH는 Pull 방식으로만 지급한다: pendingWithdrawals(장부)에 적립 → 본인이 withdraw.
+///      - 입찰자 전체를 순회하는 반복문을 두지 않는다 (가스 한도 초과로 종료가 막히는 것 방지, design.md 7번).
 contract BlindAuction is ReentrancyGuard {
     // ─────────────────────────────────────────────────────────────
-    // 타입 (design.md 3.1, 4.2, 4.5)
+    // 타입
     // ─────────────────────────────────────────────────────────────
 
-    /// @dev 상태는 저장하지 않고 시간과 플래그로 계산한다 (phaseOf).
+    /// @dev 상태는 저장하지 않고 블록 시간과 finalized 표시로 계산한다 (phaseOf, design.md 10번).
     ///      저장해 두면 "시간이 지났는데 상태 값은 그대로"인 불일치가 생길 수 있기 때문.
+    ///      경매 취소는 없으므로(design.md 16번) 상태는 4개뿐이다.
     enum Phase {
-        Bidding,
-        Reveal,
-        AwaitingFinalize,
-        Settled,
-        NoWinner,
-        Cancelled
+        Bidding, // 입찰 중
+        Reveal, // 공개 중
+        AwaitingFinalize, // 종료 대기 (공개 마감 후, 아직 finalize 안 됨)
+        Finalized // 종료
     }
 
     enum InvalidReason {
         None,
         Fake,
-        InsufficientDeposit,
-        BelowReserve
+        InsufficientDeposit
     }
 
     struct Auction {
         address seller;
         address nft;
         uint256 tokenId;
-        uint256 reservePrice; // 최저가 (wei)
         uint64 biddingEnd;
         uint64 revealEnd;
         address highestBidder; // 현재 최고가 입찰자 (없으면 0)
@@ -47,7 +44,6 @@ contract BlindAuction is ReentrancyGuard {
         uint256 revealedDeposits; // 공개된 입찰 보증금 합계
         uint32 bidCount;
         bool finalized;
-        bool cancelled;
     }
 
     struct Bid {
@@ -61,10 +57,13 @@ contract BlindAuction is ReentrancyGuard {
     // 상수와 저장 데이터
     // ─────────────────────────────────────────────────────────────
 
-    /// @dev 블록 생성자는 block.timestamp를 수 초 범위에서만 조정할 수 있다.
-    ///      기간을 최소 1분으로 두어 그 영향을 무시할 수 있게 한다 (design.md 8.2).
-    uint64 public constant MIN_DURATION = 1 minutes;
-    uint64 public constant MAX_DURATION = 30 days;
+    /// @dev 기간은 판매자가 정하되 범위를 제한한다 (design.md 4번 Q2).
+    ///      공개는 모든 입찰자가 직접 트랜잭션을 보내야 하므로 입찰보다 여유 있게 둔다.
+    ///      블록 생성자는 block.timestamp를 수 초 범위에서만 조정할 수 있어서, 최소 10분이면 그 영향은 무시할 수 있다.
+    uint64 public constant MIN_BIDDING_DURATION = 10 minutes;
+    uint64 public constant MAX_BIDDING_DURATION = 5 days;
+    uint64 public constant MIN_REVEAL_DURATION = 1 days;
+    uint64 public constant MAX_REVEAL_DURATION = 2 days;
 
     uint256 public nextAuctionId;
     uint256 private bidSeq;
@@ -73,7 +72,7 @@ contract BlindAuction is ReentrancyGuard {
     mapping(address => uint256) public pendingWithdrawals;
 
     // ─────────────────────────────────────────────────────────────
-    // 이벤트 (design.md 4.5)
+    // 이벤트 (design.md 6번)
     // Indexer가 추가 조회 없이 DB를 채울 수 있도록 필요한 값을 모두 담는다.
     // indexed 인자는 로그의 topic에 들어가 주소·ID로 필터링할 수 있다.
     // ─────────────────────────────────────────────────────────────
@@ -83,7 +82,6 @@ contract BlindAuction is ReentrancyGuard {
         address indexed seller,
         address indexed nft,
         uint256 tokenId,
-        uint256 reservePrice,
         uint64 biddingEnd,
         uint64 revealEnd
     );
@@ -112,11 +110,10 @@ contract BlindAuction is ReentrancyGuard {
         uint256 winningBid,
         uint256 forfeited
     );
-    event AuctionCancelled(uint256 indexed auctionId);
     event Withdrawn(address indexed account, uint256 amount);
 
     // ─────────────────────────────────────────────────────────────
-    // 에러 (design.md 4.6)
+    // 에러
     // require("문자열") 대신 custom error: 배포·실행 가스가 적고,
     // 테스트에서 revertedWithCustomError로 어떤 에러인지 정확히 검증할 수 있다.
     // ─────────────────────────────────────────────────────────────
@@ -124,13 +121,11 @@ contract BlindAuction is ReentrancyGuard {
     error AuctionNotFound();
     error InvalidDuration();
     error InvalidPhase();
-    error NotSeller();
     error SellerCannotBid();
     error ZeroDeposit();
     error BidNotFound();
     error AlreadyRevealed();
     error CommitmentMismatch();
-    error AuctionHasBids();
     error NothingToWithdraw();
     error TransferFailed();
 
@@ -140,20 +135,20 @@ contract BlindAuction is ReentrancyGuard {
 
     /// @notice 경매를 만들고 NFT를 컨트랙트로 옮겨 보관(에스크로)한다.
     /// @dev 호출 전에 NFT 소유자가 이 컨트랙트에 approve(또는 setApprovalForAll)해야 한다.
-    ///      transferFrom의 from이 msg.sender이므로 NFT 소유자 본인만 경매를 만들 수 있다.
+    ///      transferFrom의 from이 msg.sender이므로 NFT 소유자 본인만 경매를 만들 수 있다 (design.md 13번).
+    ///      최저가는 두지 않는다 (design.md 16번).
     function createAuction(
         address nft,
         uint256 tokenId,
-        uint256 reservePrice,
         uint64 biddingDuration,
         uint64 revealDuration
     ) external returns (uint256 auctionId) {
         // [Checks]
         if (
-            biddingDuration < MIN_DURATION ||
-            biddingDuration > MAX_DURATION ||
-            revealDuration < MIN_DURATION ||
-            revealDuration > MAX_DURATION
+            biddingDuration < MIN_BIDDING_DURATION ||
+            biddingDuration > MAX_BIDDING_DURATION ||
+            revealDuration < MIN_REVEAL_DURATION ||
+            revealDuration > MAX_REVEAL_DURATION
         ) revert InvalidDuration();
 
         // [Effects] 외부 호출 전에 상태를 먼저 기록한다 (CEI 패턴).
@@ -165,11 +160,10 @@ contract BlindAuction is ReentrancyGuard {
         a.seller = msg.sender;
         a.nft = nft;
         a.tokenId = tokenId;
-        a.reservePrice = reservePrice;
         a.biddingEnd = biddingEnd;
         a.revealEnd = revealEnd;
 
-        emit AuctionCreated(auctionId, msg.sender, nft, tokenId, reservePrice, biddingEnd, revealEnd);
+        emit AuctionCreated(auctionId, msg.sender, nft, tokenId, biddingEnd, revealEnd);
 
         // [Interactions] NFT를 컨트랙트로 이동.
         // approve가 없거나 소유자가 아니면 NFT 컨트랙트가 revert → 위 기록도 전부 취소된다.
@@ -237,17 +231,18 @@ contract BlindAuction is ReentrancyGuard {
             reason = InvalidReason.Fake;
         } else if (b.deposit < value) {
             reason = InvalidReason.InsufficientDeposit;
-        } else if (value == 0 || value < a.reservePrice) {
-            reason = InvalidReason.BelowReserve;
         } else {
             reason = InvalidReason.None;
         }
 
         // 최고가 갱신. 동점이면 seq(제출 순번)가 작은 입찰이 이긴다 → 공개 순서와 무관 (design.md 2.4).
-        // value > 0이 보장되므로 최고가가 없는 상태(highestBid == 0)에서는 항상 첫 번째 조건으로 들어온다.
+        // 최저가가 없어서 입찰가 0도 유효하다. 그래서 "최고가가 아직 없음"을 금액(0)이 아니라
+        // highestBidder == address(0)으로 따로 확인한다. 이 조건이 없으면 첫 유효 입찰이 0일 때 최고가가 되지 못한다.
         if (
             reason == InvalidReason.None &&
-            (value > a.highestBid || (value == a.highestBid && b.seq < a.highestBidSeq))
+            (a.highestBidder == address(0) ||
+                value > a.highestBid ||
+                (value == a.highestBid && b.seq < a.highestBidSeq))
         ) {
             // 밀려난 이전 최고가 입찰의 금액을 그 입찰자에게 적립한다.
             // 이전 최고가 입찰자가 msg.sender 본인일 수도 있다 (한 사람의 여러 입찰).
@@ -275,7 +270,7 @@ contract BlindAuction is ReentrancyGuard {
         return _getAuction(auctionId);
     }
 
-    /// @notice 현재 경매 상태 (design.md 3.1)
+    /// @notice 현재 경매 상태 (design.md 10번 상태표)
     function phaseOf(uint256 auctionId) external view returns (Phase) {
         return _phase(_getAuction(auctionId));
     }
@@ -303,10 +298,10 @@ contract BlindAuction is ReentrancyGuard {
         if (a.seller == address(0)) revert AuctionNotFound();
     }
 
-    /// @dev 시간 판단은 block.timestamp 하나로 통일한다 (design.md 8.1).
+    /// @dev 시간 판단은 block.timestamp 하나로 통일한다 (design.md 13번 "잘못된 상태").
+    ///      Indexer·API도 서버 시계가 아니라 블록 시간으로 같은 계산을 한다 (design.md 10번).
     function _phase(Auction storage a) private view returns (Phase) {
-        if (a.cancelled) return Phase.Cancelled;
-        if (a.finalized) return a.highestBidder != address(0) ? Phase.Settled : Phase.NoWinner;
+        if (a.finalized) return Phase.Finalized;
         if (block.timestamp < a.biddingEnd) return Phase.Bidding;
         if (block.timestamp < a.revealEnd) return Phase.Reveal;
         return Phase.AwaitingFinalize;

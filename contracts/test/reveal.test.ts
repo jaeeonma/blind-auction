@@ -139,13 +139,6 @@ describe("BlindAuction: reveal", function () {
         fake: false,
         reason: InvalidReason.InsufficientDeposit,
       },
-      {
-        name: "value < reserve price",
-        value: eth("0.5"),
-        deposit: eth("1"),
-        fake: false,
-        reason: InvalidReason.BelowReserve,
-      },
     ];
 
     for (const c of cases) {
@@ -167,23 +160,20 @@ describe("BlindAuction: reveal", function () {
       });
     }
 
-    it("value = 0 → BelowReserve even when the reserve price is 0", async function () {
-      const { nft, auction, seller, alice } = await loadFixture(auctionCreatedFixture);
-      await nft.mint(seller.address); // tokenId 2
-      await nft.connect(seller).approve(await auction.getAddress(), 2n);
-      await auction.connect(seller).createAuction(await nft.getAddress(), 2n, 0n, 60n, 60n);
-      const auctionId = 1n;
-
+    it("value = 0 is valid (no reserve price) and becomes the first highest bid", async function () {
+      const { auction, auctionId, alice, biddingEnd } = await loadFixture(auctionCreatedFixture);
       const s = await placeBid(auction, auctionId, alice, 0n, eth("1"));
-      await time.increaseTo((await auction.getAuction(auctionId)).biddingEnd);
+      await time.increaseTo(biddingEnd);
 
       await expect(revealBid(auction, auctionId, s))
         .to.emit(auction, "BidRevealed")
-        .withArgs(auctionId, alice.address, 0n, 0n, false, InvalidReason.BelowReserve, eth("1"));
-      expect((await auction.getAuction(auctionId)).highestBidder).to.equal(ethers.ZeroAddress);
+        .withArgs(auctionId, alice.address, 0n, 0n, false, InvalidReason.None, eth("1"));
+      const a = await auction.getAuction(auctionId);
+      expect(a.highestBidder).to.equal(alice.address);
+      expect(a.highestBid).to.equal(0n);
     });
 
-    it("value = reserve price is valid", async function () {
+    it("deposit = value is valid", async function () {
       const { auction, auctionId, alice, biddingEnd } = await loadFixture(auctionCreatedFixture);
       const s = await placeBid(auction, auctionId, alice, eth("1"), eth("1"));
       await time.increaseTo(biddingEnd);
@@ -337,7 +327,7 @@ describe("BlindAuction: reveal", function () {
       const bobValid = await placeBid(auction, auctionId, bob, eth("4"), eth("4"));
       const carolHidden = await placeBid(auction, auctionId, carol, eth("2"), eth("2")); // never revealed
       const otherTie = await placeBid(auction, auctionId, other, eth("4"), eth("6")); // ties bob, later seq
-      const aliceLow = await placeBid(auction, auctionId, alice, eth("0.5"), eth("1")); // below reserve
+      const aliceLow = await placeBid(auction, auctionId, alice, eth("0.5"), eth("1")); // valid but lower
       const carolShort = await placeBid(auction, auctionId, carol, eth("3"), eth("1")); // deposit < value
 
       const unrevealed = [aliceValid, bobFake, bobValid, carolHidden, otherTie, aliceLow, carolShort];
