@@ -234,6 +234,43 @@ contract BlindAuction is ReentrancyGuard {
         emit BidRevealed(auctionId, msg.sender, value, valid);
     }
 
+    /// @notice 공개 마감 후 경매를 정산한다. 누구나 1회 호출할 수 있다.
+    /// @dev 판매자만 호출할 수 있으면, 결과가 마음에 안 드는 판매자가 호출하지 않아
+    ///      모든 보증금이 묶일 수 있다. 그래서 누구나 호출할 수 있게 한다 (design.md 4번 Q8).
+    ///      입찰자별 반환은 공개 때 이미 장부에 적었으므로, 여기서는 낙찰자와 판매자 몫만 적는다.
+    ///      입찰자 전체를 도는 반복문이 없어서 입찰자가 많아도 가스 상한에 걸리지 않는다 (design.md 7번).
+    function finalize(uint256 auctionId) external nonReentrant {
+        // [Checks] 공개 마감 후, 아직 종료되지 않았을 때만.
+        // 종료 후에는 phase가 Finalized가 되므로 두 번째 호출도 여기서 실패한다 (design.md 13번 "중복 실행").
+        Auction storage a = _getAuction(auctionId);
+        if (_phase(a) != Phase.AwaitingFinalize) revert InvalidPhase();
+
+        // [Effects] 외부 호출(NFT 전송) 전에 "종료 여부" 표시와 장부 기록을 모두 끝낸다 (CEI 패턴).
+        a.finalized = true;
+
+        // 몰수금 = 보증금 전체 합계 − 공개된 보증금 합계 = 공개하지 않은 입찰의 보증금 (design.md 4번 Q4, 7번)
+        uint256 forfeited = a.totalDeposits - a.revealedDeposits;
+        address winner = a.highestBidder;
+        // 유효 입찰이 없으면 highestBid는 0으로 남아 있다 → 낙찰가 0 (design.md 7번)
+        uint256 winningBid = a.highestBid;
+
+        if (winner != address(0)) {
+            // 낙찰자: 보증금 − 낙찰가. 유효 입찰이라 보증금 ≥ 낙찰가가 보장되므로 음수가 되지 않는다.
+            pendingWithdrawals[winner] += bids[auctionId][winner].deposit - winningBid;
+        }
+        // 판매자: 낙찰가 + 몰수금. 유효 입찰이 없으면 몰수금만 (design.md 4번 Q6, Q7).
+        pendingWithdrawals[a.seller] += winningBid + forfeited;
+
+        emit AuctionFinalized(auctionId, winner, winningBid, forfeited);
+
+        // [Interactions] NFT는 낙찰자에게, 유효 입찰이 없으면 판매자에게 돌려준다 (design.md 5번).
+        // safeTransferFrom이 아닌 transferFrom: safeTransferFrom은 받는 쪽이 컨트랙트면 콜백을 호출하는데,
+        // 낙찰자 컨트랙트가 콜백에서 revert하면 종료 전체가 취소되어 모든 정산이 막힌다.
+        // NFT 주소는 판매자가 넣은 임의 컨트랙트라 이 호출 중에 다시 들어올 수 있으므로 nonReentrant도 단다.
+        address nftReceiver = winner != address(0) ? winner : a.seller;
+        IERC721(a.nft).transferFrom(address(this), nftReceiver, a.tokenId);
+    }
+
     // ─────────────────────────────────────────────────────────────
     // 조회 함수 (테스트와 사용자 스크립트용)
     // ─────────────────────────────────────────────────────────────
