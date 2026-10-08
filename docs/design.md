@@ -105,6 +105,29 @@ README.md
 - 이벤트에 담을 정보는 10번 DB 칼럼을 기준으로 개발 시작 전에 정한다. Indexer가 이벤트 하나만 보고 DB를 채울 수 있어야 한다.
 - 예: 종료됨 이벤트에는 낙찰자 주소가 있어야 Indexer가 입찰마다 낙찰·패찰을 정할 수 있다.
 
+**이벤트 항목** (10번 DB 칼럼 기준. Indexer는 이벤트만 보고 DB를 채운다)
+
+| 이벤트 | 항목 (★ = indexed) | 채우는 DB 칼럼 |
+|---|---|---|
+| 경매 생성됨 `AuctionCreated` | auctionId★, seller★, nft★, tokenId, biddingEnd, revealEnd | auctions: 경매 번호, 판매자, NFT 주소, 토큰 번호, 입찰 마감, 공개 마감 |
+| 입찰됨 `BidCommitted` | auctionId★, bidder★, commitment, deposit | bids: 경매 번호, 입찰자 주소, 해시, 보증금. 결과 = 미공개 |
+| 공개됨 `BidRevealed` | auctionId★, bidder★, value, valid | bids: 공개 여부, 입찰가, 결과 = 유효 또는 무효 |
+| 종료됨 `AuctionFinalized` | auctionId★, winner★, winningBid, forfeited | auctions: 종료 여부, 낙찰자, 낙찰가, 몰수금. bids: 낙찰자의 입찰 = 낙찰, 나머지 유효 입찰 = 패찰 |
+| 출금됨 `Withdrawn` | account★, amount | 저장하지 않는다 (10번) |
+
+결과 칼럼이 바뀌는 순서:
+
+| 이벤트 | 결과 |
+|---|---|
+| 입찰됨 | 미공개 |
+| 공개됨 | valid가 true면 유효, false면 무효 |
+| 종료됨 | 유효 중 winner의 입찰은 낙찰, 나머지는 패찰. 무효는 그대로 무효, 미공개는 그대로 미공개(몰수) |
+
+- 유효 입찰이 없으면 winner는 0 주소이고 winningBid는 0이다. DB의 낙찰자는 비워 둔다(NULL).
+- 입찰 순서(seq)와 장부 금액은 이벤트에 넣지 않는다. 조회 요구사항(11번)에 쓰는 곳이 없고, 동점 판정은 컨트랙트가 이미 끝냈으므로 Indexer는 그 결과(winner)만 옮기면 된다.
+- 블록 시간은 이벤트가 아니라 이벤트가 들어 있는 블록에서 읽는다 (indexer_state).
+- indexed 항목은 로그의 topic(검색용 칸)에 들어가서 경매 번호나 주소로 걸러 요청할 수 있다.
+
 ## 7. 정산
 
 **반환은 종료 때가 아니라 공개 때 장부에 적는다.** 종료 때 한꺼번에 처리하면 입찰자 전체를 반복문으로 돌아야 하고, 트랜잭션의 가스 상한 때문에 입찰자가 많으면 종료가 실행되지 않는다. 공개는 한 명씩 들어오므로 그때 결과를 적으면 반복문이 필요 없다.
