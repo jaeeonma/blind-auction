@@ -71,7 +71,7 @@ GitHub 저장소의 작업 이력 관리 방식도 평가된다. 상세 규칙�
 
 - [x] **0단계. 프로젝트 세팅**
 - [x] **1단계. 설계** — 설계 문서 v2 확정 (2026-10-07)
-- [ ] **2단계. 스마트 컨트랙트 + 단위 테스트** (`feat/contract`) — v1 기준으로 작성된 기존 코드(createAuction, bid, reveal)를 v2에 맞게 수정 → finalize → withdraw → design.md 14번 단위 테스트 전체 통과
+- [x] **2단계. 스마트 컨트랙트 + 단위 테스트** (`feat/contract`) — v1 기준으로 작성된 기존 코드(createAuction, bid, reveal)를 v2에 맞게 수정 → finalize → withdraw → design.md 14번 단위 테스트 전체 통과
 - [ ] **3단계. 이벤트 항목 확정 + DB 테이블 + Indexer** (`feat/indexer`) — 이벤트 항목을 design.md 6번에 추가, 중단 후 재시작 시 누락·중복 없음
 - [ ] **4단계. Backend API** (`feat/api`) — design.md 11번 조회 전체, API 주소를 design.md에 추가
 - [ ] **5단계. 사용자 스크립트 + 통합 테스트** (`feat/scripts`, `test/integration`) — design.md 12번, 14번 통합 테스트
