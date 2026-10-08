@@ -51,6 +51,8 @@ NFT를 ETH로 비공개 입찰하는 경매. 입찰가는 해시로 숨겨서 �
 
 - Indexer와 API는 따로 실행한다. 통합 테스트에서 Indexer를 껐다가 다시 켜야 하는데, 묶여 있으면 API도 같이 꺼진다. 따로 두면 Indexer가 멈춰도 API는 계속 조회할 수 있다.
 - 테이블 정의는 db/에 SQL 파일로 한 번만 두고, Indexer와 API가 같은 테이블을 쓴다.
+- 테이블은 `npm run db:init`으로 만든다. SQL이 IF NOT EXISTS라 여러 번 실행해도 안전하다. Docker 초기화 폴더(docker-entrypoint-initdb.d)는 볼륨이 비어 있을 때 한 번만 실행되어, 이미 만든 DB에 적용하거나 통합 테스트에서 테이블을 다시 만들 수 없어서 쓰지 않는다.
+- Node 패키지는 두 개다. contracts/는 Hardhat 전용 패키지로 따로 두고, db/·indexer/·api/·tests/는 루트 package.json 하나를 같이 쓴다. Indexer와 API는 프로세스만 다르고 DB 연결, 환경 변수 읽기 같은 코드와 의존성(pg, TypeScript)이 같아서, 폴더마다 패키지를 두면 설치와 설정만 늘어난다.
 
 **폴더 구조**
 
