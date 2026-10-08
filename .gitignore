@@ -4,7 +4,7 @@ node_modules/
 # Secrets (commit .env.example only)
 .env
 
-# Local bid secrets (salt, bid plaintext) — never commit (design.md 5.3)
+# Local bid secrets (bid value, secret) — never commit (design.md 8번, 12번)
 .bids/
 
 # Hardhat build outputs
