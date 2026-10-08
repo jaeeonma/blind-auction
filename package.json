@@ -9,10 +9,12 @@
   },
   "scripts": {
     "db:init": "tsx db/init.ts",
+    "indexer": "tsx indexer/main.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
+    "ethers": "^6.17.0",
     "pg": "^8.23.1"
   },
   "devDependencies": {
