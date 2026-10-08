@@ -271,6 +271,28 @@ contract BlindAuction is ReentrancyGuard {
         IERC721(a.nft).transferFrom(address(this), nftReceiver, a.tokenId);
     }
 
+    /// @notice 장부에 적힌 자기 몫을 출금한다. 언제든 호출할 수 있다.
+    /// @dev 컨트랙트가 여러 명에게 직접 송금하지 않고, 각자 자기 몫을 가져간다 (Pull 방식, design.md 13번 "자산 전송").
+    ///      직접 보내면 한 명이 송금을 거부할 때(받는 쪽 컨트랙트가 revert) 다른 사람의 정산까지 막힌다.
+    ///      자기 몫만 출금하므로 남의 장부에는 손댈 수 없다 (design.md 13번 "권한 없는 사용자").
+    function withdraw() external nonReentrant {
+        // [Checks]
+        uint256 amount = pendingWithdrawals[msg.sender];
+        if (amount == 0) revert NothingToWithdraw(); // 두 번째 출금은 받을 돈이 없어 실패한다
+
+        // [Effects] 송금하기 전에 장부를 먼저 0으로 만든다 (CEI 패턴, design.md 13번 "취약점").
+        // 송금을 먼저 하면, 받는 쪽 컨트랙트가 ETH를 받는 순간(receive) withdraw를 다시 호출했을 때
+        // 장부가 아직 그대로라 같은 금액을 또 받아 갈 수 있다 → 남의 보증금까지 빠져나간다.
+        pendingWithdrawals[msg.sender] = 0;
+        emit Withdrawn(msg.sender, amount);
+
+        // [Interactions] transfer() 대신 call: transfer는 가스를 2300으로 제한해서 받는 쪽이 컨트랙트 지갑이면 실패할 수 있다.
+        // call은 가스 제한이 없어 재진입 여지가 생기므로, 위의 CEI 순서와 nonReentrant(재호출 잠금)로 이중으로 막는다.
+        (bool ok, ) = payable(msg.sender).call{value: amount}("");
+        // 송금이 실패하면 revert → 장부를 0으로 만든 것도 취소되어 돈을 잃지 않는다.
+        if (!ok) revert TransferFailed();
+    }
+
     // ─────────────────────────────────────────────────────────────
     // 조회 함수 (테스트와 사용자 스크립트용)
     // ─────────────────────────────────────────────────────────────
