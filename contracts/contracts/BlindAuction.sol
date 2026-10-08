@@ -267,6 +267,8 @@ contract BlindAuction is ReentrancyGuard {
         // safeTransferFrom이 아닌 transferFrom: safeTransferFrom은 받는 쪽이 컨트랙트면 콜백을 호출하는데,
         // 낙찰자 컨트랙트가 콜백에서 revert하면 종료 전체가 취소되어 모든 정산이 막힌다.
         // NFT 주소는 판매자가 넣은 임의 컨트랙트라 이 호출 중에 다시 들어올 수 있으므로 nonReentrant도 단다.
+        // 경매 대상 NFT는 정상 동작하는 ERC-721이라고 가정한다. 전송을 막는 NFT면 여기서 revert되어
+        // 종료가 실패하고 낙찰자의 보증금이 묶일 수 있다 (design.md 16번).
         address nftReceiver = winner != address(0) ? winner : a.seller;
         IERC721(a.nft).transferFrom(address(this), nftReceiver, a.tokenId);
     }
