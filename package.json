@@ -10,16 +10,21 @@
   "scripts": {
     "db:init": "tsx db/init.ts",
     "indexer": "tsx indexer/main.ts",
+    "api": "tsx api/main.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
     "ethers": "^6.17.0",
+    "express": "^5.3.0",
     "pg": "^8.23.1"
   },
   "devDependencies": {
+    "@types/express": "^5.0.6",
     "@types/node": "^26.6.4",
     "@types/pg": "^8.23.1",
+    "@types/supertest": "^7.2.1",
+    "supertest": "^7.3.1",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vitest": "^5.0.3"

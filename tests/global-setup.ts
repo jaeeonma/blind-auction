@@ -25,7 +25,11 @@ export async function setup(project: TestProject) {
   const compile = spawnSync(process.execPath, [hardhatCli, "compile", "--quiet"], { cwd: contractsDir, stdio: "inherit" });
   if (compile.status !== 0) throw new Error("hardhat compile failed");
 
-  node = spawn(process.execPath, [hardhatCli, "node", "--port", String(port)], { cwd: contractsDir });
+  // The test node must mine only on transactions. DEV_BLOCK_INTERVAL_MS could have been loaded from
+  // the root .env (db/env.ts), so it is removed explicitly: an interval block slipping in between
+  // evm_setNextBlockTimestamp and a transaction would make time-boundary tests flaky.
+  const { DEV_BLOCK_INTERVAL_MS: _ignored, ...nodeEnv } = process.env;
+  node = spawn(process.execPath, [hardhatCli, "node", "--port", String(port)], { cwd: contractsDir, env: nodeEnv });
   await new Promise<void>((resolve, reject) => {
     let output = "";
     const timer = setTimeout(() => reject(new Error(`Hardhat node did not start:\n${output}`)), 60_000);
