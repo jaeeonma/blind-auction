@@ -1,4 +1,4 @@
-# Stage 0: PostgreSQL only. Hardhat node, Indexer, and API are added in later stages.
+# PostgreSQL only. The Hardhat node, Indexer, and API run as separate local processes (design.md 3번).
 # Fixed project name so container/volume names don't depend on the local folder name.
 name: blind-auction
 
@@ -13,7 +13,7 @@ services:
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
-      # Named volume keeps data across container restarts (design.md 6.10)
+      # Named volume keeps data across container restarts
       - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
