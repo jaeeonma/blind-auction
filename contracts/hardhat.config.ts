@@ -1,5 +1,6 @@
 import { HardhatUserConfig } from "hardhat/config";
 import "@nomicfoundation/hardhat-toolbox";
+import "./tasks"; // 사용자 스크립트 (design.md 12번)
 
 // 개발용 노드(`npm run node`)만 이 값을 설정한다 (design.md 3번 실행 구성).
 // Hardhat 노드는 트랜잭션이 올 때만 블록을 만들어서, 트랜잭션이 없으면 블록 시간이 멈추고
@@ -21,6 +22,10 @@ const config: HardhatUserConfig = {
       // 테스트에서는 켜지 않는다: 시간을 지정한 블록 사이에 빈 블록이 끼어들면 경계값 테스트가 흔들린다.
       // 변수가 없으면 Hardhat 기본값(트랜잭션마다 블록)이다.
       mining: blockIntervalMs > 0 ? { auto: true, interval: blockIntervalMs } : undefined,
+    },
+    // 사용자 스크립트가 붙는 로컬 노드. 통합 테스트는 RPC_URL로 테스트 노드(8546)를 가리킨다.
+    localhost: {
+      url: process.env.RPC_URL || "http://127.0.0.1:8545",
     },
   },
 };

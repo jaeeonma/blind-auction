@@ -8,7 +8,8 @@
     "test": "hardhat test",
     "coverage": "hardhat coverage",
     "node": "cross-env DEV_BLOCK_INTERVAL_MS=5000 hardhat node",
-    "clean": "hardhat clean"
+    "clean": "hardhat clean",
+    "deploy": "hardhat --network localhost deploy"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^6.1.2",

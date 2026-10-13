@@ -12,6 +12,9 @@ contracts/artifacts/
 contracts/cache/
 contracts/typechain-types/
 
+# Local deployment addresses (change every time the local node restarts)
+contracts/deployments/
+
 # Coverage
 coverage/
 coverage.json

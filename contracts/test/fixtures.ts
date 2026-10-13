@@ -22,16 +22,9 @@ export const Phase = {
   Finalized: 3n,
 } as const;
 
-/** Hash = value + secret + bidder (design.md 4번 Q11) — must match the contract's reveal check. */
-export function computeCommitment(value: bigint, secret: string, bidder: string): string {
-  return ethers.keccak256(
-    ethers.AbiCoder.defaultAbiCoder().encode(["uint256", "bytes32", "address"], [value, secret, bidder]),
-  );
-}
-
-export function randomSecret(): string {
-  return ethers.hexlify(ethers.randomBytes(32));
-}
+// The same hash function the user scripts use, so the tests prove the scripts' encoding matches the contract.
+import { computeCommitment, randomSecret } from "../scripts/lib/commitment";
+export { computeCommitment, randomSecret };
 
 /** A committed bid together with the values the bidder keeps locally. */
 export interface SecretBid {
