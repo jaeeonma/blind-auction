@@ -9,7 +9,9 @@
     "coverage": "hardhat coverage",
     "node": "cross-env DEV_BLOCK_INTERVAL_MS=5000 hardhat node",
     "clean": "hardhat clean",
-    "deploy": "hardhat --network localhost deploy"
+    "deploy": "hardhat --network localhost deploy",
+    "mint-nft": "hardhat --network localhost mint-nft",
+    "create-auction": "hardhat --network localhost create-auction"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^6.1.2",
