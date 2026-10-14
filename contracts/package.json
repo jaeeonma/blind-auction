@@ -16,7 +16,8 @@
     "reveal": "hardhat --network localhost reveal",
     "finalize": "hardhat --network localhost finalize",
     "withdraw": "hardhat --network localhost withdraw",
-    "time-travel": "hardhat --network localhost time-travel"
+    "time-travel": "hardhat --network localhost time-travel",
+    "demo": "hardhat --network localhost demo"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^6.1.2",

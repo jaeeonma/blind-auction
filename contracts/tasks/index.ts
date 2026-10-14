@@ -5,3 +5,4 @@ import "./auction";
 import "./bid";
 import "./settle";
 import "./time";
+import "./demo";
