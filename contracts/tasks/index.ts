@@ -3,3 +3,4 @@
 import "./deploy";
 import "./auction";
 import "./bid";
+import "./settle";

@@ -13,7 +13,9 @@
     "mint-nft": "hardhat --network localhost mint-nft",
     "create-auction": "hardhat --network localhost create-auction",
     "bid": "hardhat --network localhost bid",
-    "reveal": "hardhat --network localhost reveal"
+    "reveal": "hardhat --network localhost reveal",
+    "finalize": "hardhat --network localhost finalize",
+    "withdraw": "hardhat --network localhost withdraw"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^6.1.2",
