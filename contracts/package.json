@@ -11,7 +11,9 @@
     "clean": "hardhat clean",
     "deploy": "hardhat --network localhost deploy",
     "mint-nft": "hardhat --network localhost mint-nft",
-    "create-auction": "hardhat --network localhost create-auction"
+    "create-auction": "hardhat --network localhost create-auction",
+    "bid": "hardhat --network localhost bid",
+    "reveal": "hardhat --network localhost reveal"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^6.1.2",

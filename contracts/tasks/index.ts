@@ -2,3 +2,4 @@
 // Task files must not import "hardhat" itself (it would load the config again); they get `hre` instead.
 import "./deploy";
 import "./auction";
+import "./bid";
