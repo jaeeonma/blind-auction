@@ -8,7 +8,16 @@
     "test": "hardhat test",
     "coverage": "hardhat coverage",
     "node": "cross-env DEV_BLOCK_INTERVAL_MS=5000 hardhat node",
-    "clean": "hardhat clean"
+    "clean": "hardhat clean",
+    "deploy": "hardhat --network localhost deploy",
+    "mint-nft": "hardhat --network localhost mint-nft",
+    "create-auction": "hardhat --network localhost create-auction",
+    "bid": "hardhat --network localhost bid",
+    "reveal": "hardhat --network localhost reveal",
+    "finalize": "hardhat --network localhost finalize",
+    "withdraw": "hardhat --network localhost withdraw",
+    "time-travel": "hardhat --network localhost time-travel",
+    "demo": "hardhat --network localhost demo"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^6.1.2",
