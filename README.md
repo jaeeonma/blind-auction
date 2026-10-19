@@ -33,10 +33,10 @@ npm run db:init
 # 2. [터미널 1] 로컬 블록체인. 트랜잭션이 없어도 5초마다 블록을 만든다
 cd contracts && npm run node
 
-# 3. 컨트랙트 배포. 출력의 마지막 두 줄을 .env에 넣는다
+# 3. 컨트랙트 배포(처음이면 컴파일도 한다). 출력의 마지막 두 줄을 .env에 넣는다
 cd contracts && npm run deploy
-#   CONTRACT_ADDRESS=0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512
-#   DEPLOY_BLOCK=2
+#   예) CONTRACT_ADDRESS=0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512
+#       DEPLOY_BLOCK=13            (노드를 켠 뒤 지난 시간에 따라 달라진다)
 
 # 4. [터미널 2] Indexer, [터미널 3] API (루트에서)
 npm run indexer
@@ -44,7 +44,7 @@ npm run api
 
 # 5. design.md 7번 예시를 한 번에 실행하고 API로 확인
 cd contracts && npm run demo
-curl http://localhost:3000/auctions/0
+curl http://localhost:3000/auctions/0    # Windows PowerShell: curl.exe
 ```
 
 `demo`는 실행할 때마다 새 NFT와 새 경매를 만들어 판매자(계정 0)와 입찰자 A~D(계정 1~4)로 예시를 끝까지 진행하고, 장부가 7번과 같은지 검사한다.
