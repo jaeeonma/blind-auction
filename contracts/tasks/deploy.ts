@@ -1,4 +1,5 @@
 import { task, types } from "hardhat/config";
+import { TASK_COMPILE } from "hardhat/builtin-tasks/task-names";
 import { deployContracts } from "../scripts/lib/deploy";
 import { saveDeployment } from "../scripts/lib/deployments";
 import { accountAt, ensureLocalhost, scriptAction } from "./common";
@@ -8,6 +9,9 @@ task("deploy", "Deploy MockNFT and BlindAuction to the local node")
   .addOptionalParam("account", "Deployer account index", 0, types.int)
   .setAction(scriptAction(async (args: { account: number }, hre) => {
     ensureLocalhost(hre);
+    // A fresh clone has no build output yet. Compile first, like `hardhat run` does
+    // (nothing to do when the contracts are already compiled).
+    await hre.run(TASK_COMPILE, { quiet: true });
     const deployer = await accountAt(hre, args.account);
     const deployment = await deployContracts(hre, deployer);
     const file = saveDeployment(deployment);
