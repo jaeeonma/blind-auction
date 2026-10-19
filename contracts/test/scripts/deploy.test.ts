@@ -39,6 +39,18 @@ describe("scripts: deploy (design.md 12번)", function () {
     expect(loadDeployment(d.network, dir)).to.deep.equal(d);
   });
 
+  it("uses DEPLOYMENTS_DIR when it is set (integration tests must not overwrite the developer's file)", async function () {
+    const [deployer] = await ethers.getSigners();
+    const d = await deployContracts(hre, deployer!);
+    process.env.DEPLOYMENTS_DIR = dir;
+    try {
+      expect(saveDeployment(d)).to.equal(path.join(dir, `${d.network}.json`));
+      expect(loadDeployment(d.network)).to.deep.equal(d);
+    } finally {
+      delete process.env.DEPLOYMENTS_DIR;
+    }
+  });
+
   it("tells the user to deploy first when there is no deployment", function () {
     expect(() => loadDeployment("localhost", dir)).to.throw(/npm run deploy/);
   });

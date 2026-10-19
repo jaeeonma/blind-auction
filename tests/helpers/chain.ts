@@ -30,6 +30,11 @@ export function testProvider(rpcUrl: string): JsonRpcProvider {
   return new JsonRpcProvider(rpcUrl, 31337, { staticNetwork: true, cacheTimeout: -1 });
 }
 
+/** A read-only handle on an already deployed BlindAuction (for comparing the API with the contract). */
+export function attachAuction(provider: JsonRpcProvider, address: string): Contract {
+  return new Contract(address, artifact("BlindAuction").abi, provider);
+}
+
 export interface Chain {
   provider: JsonRpcProvider;
   seller: JsonRpcSigner;

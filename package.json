@@ -10,6 +10,7 @@
   "scripts": {
     "db:init": "tsx db/init.ts",
     "indexer": "tsx indexer/main.ts",
+    "indexer:reset": "tsx indexer/reset.ts",
     "api": "tsx api/main.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
