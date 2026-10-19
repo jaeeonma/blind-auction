@@ -267,3 +267,46 @@ BlindAuction에서 빠진 분기 하나는 `finalize`의 재진입 잠금(`nonRe
 - 경매 대상 NFT는 정상 동작하는 ERC-721이라고 가정한다. 전송을 막는 NFT면 종료가 실패해 보증금이 묶일 수 있다.
 - 블록 생성자는 블록 시간을 몇 초 조정할 수 있다. 입찰 기간이 최소 10분이라 영향이 작다.
 - 로컬 Hardhat 네트워크 기준이라 블록 재구성(reorg)은 다루지 않는다.
+
+## 7. 개발 과정
+
+**단계별 진행** (design.md 15번). 단계마다 브랜치를 만들고 PR로 `main`에 합쳤다. `main`은 항상 테스트가 통과하는 상태다.
+
+| 단계 | 브랜치 | PR | 결과 |
+|---|---|---|---|
+| 0. 프로젝트 세팅 | `chore/setup` | [#2](https://github.com/jaeeonma/blind-auction/pull/2) | 폴더 구조, Hardhat, Docker Compose(PostgreSQL) |
+| 1. 설계 | - | (#4에 포함) | 설계 문서 v2 확정 |
+| 2. 스마트 컨트랙트 | `feat/contract` | [#4](https://github.com/jaeeonma/blind-auction/pull/4) | v1 코드를 v2로 수정, finalize·withdraw, 단위 테스트 |
+| 3. Indexer | `feat/indexer` | [#5](https://github.com/jaeeonma/blind-auction/pull/5) | 이벤트 항목 확정, DB 테이블, Indexer |
+| 4. API | `feat/api` | [#6](https://github.com/jaeeonma/blind-auction/pull/6) | 조회 API, 개발용 노드 블록 생성 |
+| 5. 스크립트, 통합 테스트 | `feat/scripts`, `test/integration` | [#7](https://github.com/jaeeonma/blind-auction/pull/7), [#8](https://github.com/jaeeonma/blind-auction/pull/8) | 사용자 스크립트·demo, 시스템 테스트, 복구 명령 |
+| 6. README | `docs/readme` | - | 이 문서 |
+
+**작업 규칙**
+- 커밋은 기능 하나가 테스트를 통과할 때마다 작게 나눈다. 메시지는 Conventional Commits + 한국어(`feat(contract): 입찰 기능 추가`). 6단계 전까지 `main`에 커밋 48개.
+- PR 본문에는 변경 내용, 테스트 결과, 설계와 달라진 점을 적는다.
+- 설계와 다르게 해야 할 이유가 생기면 코드보다 먼저 이유와 변경안을 내고, 승인을 받은 뒤 design.md를 함께 고친다.
+- 커밋 전 `.env`, `.bids/`, `node_modules/`, 배포 기록이 포함되지 않았는지 확인한다.
+
+**설계 변경 이력**
+- **v1 → v2 (1단계):** 최저가, 경매 취소, 여러 번 입찰, 가짜 입찰을 빼고 규칙을 단순하게 했다. 반환 시점을 공개 때로 옮겼다.
+- **개발 중 승인을 받아 정하거나 바꾼 것** (모두 design.md에 반영)
+
+| 내용 | design.md |
+|---|---|
+| 입찰가 0·보증금 0 허용 (v2를 글자 그대로 해석) | 16번 |
+| 이벤트 항목 확정 | 6번 |
+| 패키지 구성과 `db:init` | 3번 |
+| 결과 코드는 영어, 시간은 unix 초로 저장 | 10번 |
+| `CHAIN_ID`, `RETRY_DELAY_MS` 설정 | 9번 |
+| 개발용 노드에서 5초마다 블록 생성 | 3번, 10번 |
+| API 주소, 종료 대기는 "진행 중"에 포함 | 11번 |
+| `deploy`·`demo` 스크립트, secret 파일을 전송 전에 저장 | 12번 |
+| 복구 명령이 테이블까지 비우도록 변경 | 9번 |
+
+**개발 중 찾아서 고친 문제**
+- 실제 노드(HTTP)는 revert 오류를 테스트 네트워크와 다른 모양으로 돌려줘서, 스크립트가 "입찰 없음"을 알아보지 못하고 모든 첫 입찰이 실패했다. 개발 노드에서 직접 실행하다 발견했고, 두 모양을 모두 읽게 고친 뒤 그 모양을 테스트에 넣었다.
+- ethers가 노드가 꺼져 있을 때 네트워크를 알아내려는 재시도를 끝없이 반복했다. chain id를 미리 주는 설정(`CHAIN_ID`)으로 해결했다.
+- 설계 9번의 복구 방법(책갈피만 되돌림)으로는 잘못 저장된 행이 고쳐지지 않는다는 것을 테스트로 확인하고 복구 범위를 바꿨다.
+
+**AI 도구 사용:** 이 프로젝트는 Claude Code(Anthropic)를 사용해 개발했다. 경매 규칙과 설계 v2는 개발자가 정했고, AI는 단계마다 계획을 제시해 승인을 받은 뒤 구현·테스트하고 결과를 보고했다. 설계와 다른 판단이 필요할 때는 먼저 질문했다. AI가 함께 쓴 커밋에는 `Co-Authored-By: Claude` 표시가 남아 있다.
