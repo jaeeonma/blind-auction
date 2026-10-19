@@ -152,6 +152,7 @@ export async function waitFor(
   condition: () => Promise<boolean>,
   timeoutMs = 30_000,
   details?: () => string,
+  intervalMs = 100,
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
@@ -161,7 +162,7 @@ export async function waitFor(
       // not ready yet (e.g. connection refused)
     }
     if (Date.now() > deadline) throw new Error(`Timed out waiting for ${what}${details ? `\n${details()}` : ""}`);
-    await sleep(100);
+    await sleep(intervalMs);
   }
 }
 

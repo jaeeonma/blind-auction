@@ -185,4 +185,75 @@ describe("system: scripts → chain → Indexer → DB → API (design.md 14번)
       expect(active.body.auctions.map((x: { auctionId: string }) => x.auctionId)).toEqual(["1"]);
     }
   });
+
+  const countRows = async () =>
+    (
+      await db.pool.query(
+        "SELECT (SELECT count(*) FROM auctions)::int AS auctions, (SELECT count(*) FROM bids)::int AS bids",
+      )
+    ).rows[0];
+
+  it("2-a. bids placed while the Indexer process is down are all saved after it restarts", async () => {
+    let indexer = await startIndexer();
+    const token = /Minted token (\d+)/.exec(await script("mint-nft"))![1]!;
+    await script("create-auction", "--token", token, "--bidding", "10m", "--reveal", "1d");
+    await script("bid", "--auction", "0", "--value", "3", "--deposit", "5", "--account", "1");
+    await waitIndexed();
+    expect((await api().get("/auctions/0").expect(200)).body.auction.bids).toHaveLength(1);
+
+    // The Indexer crashes (hard kill, no clean shutdown).
+    await indexer.kill();
+    const bookmark = await indexedBlock(db.pool);
+
+    // B, C and D bid while it is down.
+    for (const [account, value, deposit] of [
+      ["2", "4", "4"],
+      ["3", "3", "2"],
+      ["4", "1", "3"],
+    ] as const) {
+      await script("bid", "--auction", "0", "--value", value, "--deposit", deposit, "--account", account);
+    }
+    expect(await provider.getBlockNumber()).toBeGreaterThan(bookmark);
+
+    // The API is a separate process and keeps answering from the DB (design.md 3번).
+    // asOf shows the data is from the last block the Indexer saved.
+    const stale = await api().get("/auctions/0").expect(200);
+    expect(stale.body.auction.bids).toHaveLength(1);
+    expect(stale.body.asOf.blockNumber).toBe(bookmark);
+
+    // Restart: it continues right after its bookmark (design.md 9번), not from the deploy block.
+    indexer = await startIndexer();
+    expect(indexer.output()).toContain(`reading from block ${bookmark + 1}`);
+    await waitIndexed();
+
+    expect(await countRows()).toEqual({ auctions: 1, bids: 4 }); // nothing missing, nothing twice
+    await expectApiMatchesContract(0n);
+  });
+
+  it("2-b. killing the Indexer again and again while it catches up loses and duplicates nothing", async () => {
+    // A backlog built while no Indexer runs: three demo runs, about 16 blocks each.
+    for (let i = 0; i < 3; i++) expect(await script("demo")).toContain("All checks passed");
+    const head = await provider.getBlockNumber();
+    expect(head - deployment.deployBlock).toBeGreaterThanOrEqual(30);
+
+    // BATCH_SIZE 1: one DB transaction per block, so there are many points to die between (and inside).
+    let killedMidway = 0;
+    for (let round = 0; round < 8 && (await indexedBlock(db.pool)) < head; round++) {
+      const from = await indexedBlock(db.pool);
+      const indexer = await startIndexer(1);
+      // Kill it as soon as it has committed at least one more block.
+      await waitFor("the Indexer to make progress", async () => (await indexedBlock(db.pool)) > from, 30_000, undefined, 10);
+      await indexer.kill();
+      if ((await indexedBlock(db.pool)) < head) killedMidway++;
+    }
+    console.log(`2-b: killed the Indexer ${killedMidway} time(s) while it was catching up (${head - deployment.deployBlock} blocks)`);
+    expect(killedMidway).toBeGreaterThanOrEqual(2);
+
+    // Last restart, left running to the end.
+    await startIndexer(1);
+    await waitIndexed();
+
+    expect(await countRows()).toEqual({ auctions: 3, bids: 12 });
+    for (const id of [0n, 1n, 2n]) await expectApiMatchesContract(id);
+  });
 });
