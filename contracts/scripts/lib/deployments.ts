@@ -14,20 +14,23 @@ export interface Deployment {
   deployedAt: string;
 }
 
-export const DEFAULT_DEPLOYMENTS_DIR = path.resolve(__dirname, "../../deployments");
+/** contracts/deployments/. Integration tests use DEPLOYMENTS_DIR so they never overwrite the developer's file. */
+export function deploymentsDir(): string {
+  return process.env.DEPLOYMENTS_DIR ? path.resolve(process.env.DEPLOYMENTS_DIR) : path.resolve(__dirname, "../../deployments");
+}
 
-export function deploymentPath(network: string, dir = DEFAULT_DEPLOYMENTS_DIR): string {
+export function deploymentPath(network: string, dir = deploymentsDir()): string {
   return path.join(dir, `${network}.json`);
 }
 
-export function saveDeployment(deployment: Deployment, dir = DEFAULT_DEPLOYMENTS_DIR): string {
+export function saveDeployment(deployment: Deployment, dir = deploymentsDir()): string {
   mkdirSync(dir, { recursive: true });
   const file = deploymentPath(deployment.network, dir);
   writeFileSync(file, JSON.stringify(deployment, null, 2) + "\n");
   return file;
 }
 
-export function loadDeployment(network: string, dir = DEFAULT_DEPLOYMENTS_DIR): Deployment {
+export function loadDeployment(network: string, dir = deploymentsDir()): Deployment {
   const file = deploymentPath(network, dir);
   let raw: string;
   try {
