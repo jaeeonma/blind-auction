@@ -134,3 +134,57 @@ curl http://localhost:3000/auctions/0
 **진행 상태는 저장하지 않고 블록 시간으로 계산한다 (design.md 10번).** 저장하면 시간이 지나도 값이 안 바뀐다. 서버 시계가 아니라 Indexer가 마지막으로 읽은 블록의 시간을 써서 컨트랙트와 같은 기준으로 판단한다. 트랜잭션이 없으면 블록 시간이 멈추므로 개발용 노드는 5초마다 빈 블록을 만든다.
 
 **secret은 입찰자 컴퓨터에만 둔다 (design.md 8번).** 서버나 DB에 두면 관리자, 해킹, API 버그 중 하나만으로 공개 전에 입찰가가 드러난다. 입찰 스크립트는 secret 파일을 **트랜잭션을 보내기 전에** 저장한다. 보낸 뒤에 저장하면, 성공 직후 프로그램이 죽었을 때 secret을 잃어 공개할 수 없고 보증금이 몰수된다.
+
+## 3. 구성 요소와 연동
+
+```mermaid
+flowchart LR
+  subgraph user["사용자 컴퓨터"]
+    S["사용자 스크립트<br/>(Hardhat task, 지갑)"]
+    F[".bids/<br/>입찰가·secret 파일"]
+  end
+  C["BlindAuction 컨트랙트<br/>(Hardhat 노드)"]
+  I["Indexer<br/>별도 프로세스"]
+  D[("PostgreSQL<br/>조회용 사본")]
+  A["API<br/>별도 프로세스"]
+
+  S -- "1. 저장" --> F
+  S -- "2. 트랜잭션" --> C
+  C -- "3. 이벤트 (eth_getLogs)" --> I
+  I -- "4. 이벤트 + 책갈피<br/>한 DB 트랜잭션" --> D
+  A -- "5. 조회 (읽기 전용)" --> D
+  S -. "6. GET /auctions/..." .-> A
+```
+
+| 구성 요소 | 하는 일 | 위치 |
+|---|---|---|
+| 스마트 컨트랙트 | 경매 규칙 실행, NFT·ETH 보관, 결과를 이벤트로 남김 (원본) | `contracts/contracts/BlindAuction.sol` |
+| 사용자 스크립트 | 생성·입찰·공개·종료·출금 트랜잭션을 지갑에서 직접 보냄 | `contracts/tasks/`, `contracts/scripts/lib/` |
+| Indexer | 이벤트를 블록 범위로 읽어 DB에 저장. 책갈피로 이어 읽음 | `indexer/` |
+| PostgreSQL | 검색하기 쉽게 모은 사본. 테이블 정의는 한 곳 | `db/schema.sql` |
+| API | DB를 조회해 돌려줌. 쓰기 없음 | `api/` |
+
+**Indexer와 API를 따로 실행하는 이유:** Indexer가 멈추거나 재시작해도 API는 계속 조회에 답한다. `asOf`를 보면 데이터가 어느 블록 기준인지 알 수 있다.
+
+**이벤트 → DB (design.md 6번, 10번):** Indexer는 이벤트 하나만 보고 DB를 채운다.
+
+| 이벤트 | DB |
+|---|---|
+| `AuctionCreated` | auctions 행 생성 |
+| `BidCommitted` | bids 행 생성 (결과 `unrevealed`) |
+| `BidRevealed` | 입찰가, 결과 `valid` / `invalid` |
+| `AuctionFinalized` | 낙찰자·낙찰가·몰수금, 유효 입찰은 `won` / `lost` |
+| `Withdrawn` | 저장하지 않음 (조회에 쓰는 곳이 없음) |
+
+금액은 `NUMERIC(78,0)`(wei, uint256 최댓값까지 정확), 주소는 소문자, 시간은 unix 초로 저장한다. 사용자 테이블은 없다. 보증금·입찰가·결과는 "그 사람이 그 경매에 한 입찰"에 붙는 정보라서다.
+
+**폴더**
+
+```
+contracts/   컨트랙트, 컨트랙트 테스트, 사용자 스크립트(tasks/, scripts/lib/)
+indexer/     이벤트 수집 → DB, 복구 명령(reset.ts)
+api/         조회 API (Express)
+db/          테이블 생성 SQL, db:init
+tests/       통합 테스트 (Vitest + Supertest)
+docs/        설계 문서
+```
