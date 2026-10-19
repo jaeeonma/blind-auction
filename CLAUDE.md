@@ -75,7 +75,7 @@ GitHub 저장소의 작업 이력 관리 방식도 평가된다. 상세 규칙�
 - [x] **3단계. 이벤트 항목 확정 + DB 테이블 + Indexer** (`feat/indexer`) — 이벤트 항목을 design.md 6번에 추가, 중단 후 재시작 시 누락·중복 없음
 - [x] **4단계. Backend API** (`feat/api`) — design.md 11번 조회 전체, API 주소를 design.md에 추가
 - [x] **5단계. 사용자 스크립트 + 통합 테스트** (`feat/scripts`, `test/integration`) — design.md 12번, 14번 통합 테스트
-- [ ] **6단계. README** (`docs/readme`) — 실행 방법, 설계 이유, 구성 요소와 연동, 테스트, 장애 복구, 보안, 개발 과정
+- [x] **6단계. README** (`docs/readme`) — 실행 방법, 설계 이유, 구성 요소와 연동, 테스트, 장애 복구, 보안, 개발 과정
 
 ## 평가 항목 (README와 코드에서 드러나야 함)
 
