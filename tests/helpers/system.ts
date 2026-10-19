@@ -106,6 +106,17 @@ export async function startService(
   };
 }
 
+/** Runs a one-shot backend command (e.g. `npm run indexer:reset`) as a process and returns its output. */
+export async function runBackendScript(file: string, env: Record<string, string>): Promise<string> {
+  const child = spawn(process.execPath, ["--import", "tsx", file], { cwd: rootDir, env: { ...process.env, ...env } });
+  let output = "";
+  child.stdout!.on("data", (c: Buffer) => (output += c.toString()));
+  child.stderr!.on("data", (c: Buffer) => (output += c.toString()));
+  const code = await new Promise<number | null>((resolve) => child.once("exit", resolve));
+  if (code !== 0) throw new Error(`${file} failed (${code}):\n${output}`);
+  return output;
+}
+
 export interface ScriptEnv {
   rpcUrl: string;
   deploymentsDir: string;

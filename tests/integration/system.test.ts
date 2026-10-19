@@ -8,6 +8,7 @@ import {
   createTempDatabase,
   freePort,
   indexedBlock,
+  runBackendScript,
   runScript,
   scriptDirs,
   startService,
@@ -255,5 +256,64 @@ describe("system: scripts → chain → Indexer → DB → API (design.md 14번)
 
     expect(await countRows()).toEqual({ auctions: 3, bids: 12 });
     for (const id of [0n, 1n, 2n]) await expectApiMatchesContract(id);
+  });
+
+  /** Every row of the DB copy, in a fixed order. */
+  const snapshot = async () => ({
+    auctions: (await db.pool.query("SELECT * FROM auctions ORDER BY auction_id")).rows,
+    bids: (await db.pool.query("SELECT * FROM bids ORDER BY auction_id, bidder")).rows,
+  });
+
+  it("3. reading the same events twice stores them once (design.md 14번)", async () => {
+    let indexer = await startIndexer();
+    expect(await script("demo")).toContain("All checks passed");
+    await waitIndexed();
+    const before = await snapshot();
+    expect(before.bids).toHaveLength(4);
+
+    // Rewind only the bookmark: every event is read a second time on top of the rows already saved.
+    await indexer.kill();
+    await db.pool.query("DELETE FROM indexer_state");
+    indexer = await startIndexer();
+    expect(indexer.output()).toContain(`reading from block ${deployment.deployBlock}`);
+    await waitIndexed();
+
+    // UNIQUE keys and the guarded UPDATEs (store.ts) keep exactly one copy, with the same values:
+    // e.g. 'won'/'lost' did not fall back to 'valid' when the reveal events were read again.
+    expect(await snapshot()).toEqual(before);
+    await expectApiMatchesContract(0n);
+  });
+
+  it("3-b. npm run indexer:reset rebuilds a DB copy that holds wrong rows (design.md 9번)", async () => {
+    let indexer = await startIndexer();
+    expect(await script("demo")).toContain("All checks passed");
+    await waitIndexed();
+    const good = await snapshot();
+    await indexer.kill();
+
+    // Damage the copy: one bid gets a wrong deposit, another bid row disappears.
+    const [first, second] = good.bids as Array<{ bidder: string }>;
+    await db.pool.query("UPDATE bids SET deposit = 1 WHERE auction_id = 0 AND bidder = $1", [first!.bidder]);
+    await db.pool.query("DELETE FROM bids WHERE auction_id = 0 AND bidder = $1", [second!.bidder]);
+
+    // Why the reset empties the tables: rewinding only the bookmark brings the missing row back,
+    // but the wrong row is skipped (it already exists) and keeps its wrong value.
+    await db.pool.query("DELETE FROM indexer_state");
+    indexer = await startIndexer();
+    await waitIndexed();
+    await indexer.kill();
+    const rewound = await snapshot();
+    expect(rewound.bids).toHaveLength(4);
+    expect((rewound.bids as Array<{ bidder: string; deposit: string }>).find((b) => b.bidder === first!.bidder)!.deposit).toBe("1");
+
+    // The recovery command, run as a real process.
+    const out = await runBackendScript("indexer/reset.ts", { DATABASE_URL: db.url });
+    expect(out).toContain("removed 1 auction(s), 4 bid(s) and the bookmark");
+    expect(await countRows()).toEqual({ auctions: 0, bids: 0 });
+
+    await startIndexer();
+    await waitIndexed();
+    expect(await snapshot()).toEqual(good); // rebuilt exactly from the chain
+    await expectApiMatchesContract(0n);
   });
 });
