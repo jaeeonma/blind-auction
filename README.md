@@ -280,7 +280,7 @@ BlindAuction에서 빠진 분기 하나는 `finalize`의 재진입 잠금(`nonRe
 | 3. Indexer | `feat/indexer` | [#5](https://github.com/jaeeonma/blind-auction/pull/5) | 이벤트 항목 확정, DB 테이블, Indexer |
 | 4. API | `feat/api` | [#6](https://github.com/jaeeonma/blind-auction/pull/6) | 조회 API, 개발용 노드 블록 생성 |
 | 5. 스크립트, 통합 테스트 | `feat/scripts`, `test/integration` | [#7](https://github.com/jaeeonma/blind-auction/pull/7), [#8](https://github.com/jaeeonma/blind-auction/pull/8) | 사용자 스크립트·demo, 시스템 테스트, 복구 명령 |
-| 6. README | `docs/readme` | - | 이 문서 |
+| 6. README | `docs/readme` | [#9](https://github.com/jaeeonma/blind-auction/pull/9) | 이 문서, 빠른 시작 검증 |
 
 **작업 규칙**
 - 커밋은 기능 하나가 테스트를 통과할 때마다 작게 나눈다. 메시지는 Conventional Commits + 한국어(`feat(contract): 입찰 기능 추가`). 6단계 전까지 `main`에 커밋 48개.
