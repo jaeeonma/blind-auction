@@ -22,6 +22,8 @@ NFT를 ETH로 비공개 입찰하는 경매(Commit-Reveal). 입찰가는 해시�
 
 ```bash
 # 0. 설치 (처음 한 번)
+git clone https://github.com/jaeeonma/blind-auction.git
+cd blind-auction
 cp .env.example .env              # Windows PowerShell: Copy-Item .env.example .env
 npm install                       # 루트: db, indexer, api, 통합 테스트
 cd contracts && npm install && cd ..
