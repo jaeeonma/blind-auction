@@ -36,7 +36,7 @@ export function loadDeployment(network: string, dir = deploymentsDir()): Deploym
   try {
     raw = readFileSync(file, "utf8");
   } catch {
-    throw new Error(`No deployment found at ${file}. Run "npm run deploy" first.`);
+    throw new Error(`배포 기록이 없습니다. 먼저 "npm run deploy"를 실행하세요. 찾은 위치: ${file}`);
   }
   return JSON.parse(raw) as Deployment;
 }

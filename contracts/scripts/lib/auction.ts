@@ -12,7 +12,7 @@ export async function mintNft(nft: MockNFT, to: string): Promise<bigint> {
     const parsed = nft.interface.parseLog(log);
     if (parsed?.name === "Transfer") return parsed.args.tokenId as bigint;
   }
-  throw new Error("Transfer event not found in the mint transaction");
+  throw new Error("발행 트랜잭션에서 Transfer 이벤트를 찾지 못했습니다");
 }
 
 export interface CreatedAuction {
@@ -39,12 +39,12 @@ export async function createAuction(
 
   // Only the NFT owner can create the auction (design.md 13번).
   const owner = await nft.ownerOf(tokenId).catch(() => null);
-  if (owner === null) throw new Error(`Token ${tokenId} does not exist`);
+  if (owner === null) throw new Error(`토큰 ${tokenId}번이 없습니다`);
   if (owner.toLowerCase() === auctionAddress.toLowerCase()) {
-    throw new Error(`Token ${tokenId} is already in an auction (the auction contract holds it)`);
+    throw new Error(`토큰 ${tokenId}번은 이미 경매 중입니다 (경매 컨트랙트가 보관하고 있음)`);
   }
   if (owner.toLowerCase() !== sellerAddress.toLowerCase()) {
-    throw new Error(`Token ${tokenId} is owned by ${owner}, not by ${sellerAddress}`);
+    throw new Error(`토큰 ${tokenId}번의 주인이 아닙니다. 주인: ${owner}, 호출한 계정: ${sellerAddress}`);
   }
 
   // Durations: bidding 10 minutes to 5 days, reveal 1 to 2 days (design.md 4번 Q2). Read from the contract.
@@ -55,10 +55,10 @@ export async function createAuction(
     auction.MAX_REVEAL_DURATION(),
   ]);
   if (biddingDuration < minBid || biddingDuration > maxBid) {
-    throw new Error(`Bidding duration must be ${minBid}-${maxBid} seconds (10m-5d), got ${biddingDuration}`);
+    throw new Error(`입찰 기간은 ${minBid}~${maxBid}초(10m~5d) 사이여야 합니다. 입력: ${biddingDuration}초`);
   }
   if (revealDuration < minReveal || revealDuration > maxReveal) {
-    throw new Error(`Reveal duration must be ${minReveal}-${maxReveal} seconds (1d-2d), got ${revealDuration}`);
+    throw new Error(`공개 기간은 ${minReveal}~${maxReveal}초(1d~2d) 사이여야 합니다. 입력: ${revealDuration}초`);
   }
 
   // The contract pulls the NFT with transferFrom, so it needs approval first.
@@ -83,5 +83,5 @@ export async function createAuction(
       };
     }
   }
-  throw new Error("AuctionCreated event not found in the transaction");
+  throw new Error("트랜잭션에서 AuctionCreated 이벤트를 찾지 못했습니다");
 }

@@ -5,8 +5,8 @@ import { saveDeployment } from "../scripts/lib/deployments";
 import { accountAt, ensureLocalhost, scriptAction } from "./common";
 
 // npm run deploy [-- --account 0]
-task("deploy", "Deploy MockNFT and BlindAuction to the local node")
-  .addOptionalParam("account", "Deployer account index", 0, types.int)
+task("deploy", "MockNFT와 BlindAuction을 로컬 노드에 배포한다")
+  .addOptionalParam("account", "배포할 계정 번호", 0, types.int)
   .setAction(scriptAction(async (args: { account: number }, hre) => {
     ensureLocalhost(hre);
     // A fresh clone has no build output yet. Compile first, like `hardhat run` does
@@ -17,9 +17,10 @@ task("deploy", "Deploy MockNFT and BlindAuction to the local node")
     const file = saveDeployment(deployment);
 
     console.log(`MockNFT       ${deployment.mockNft}`);
-    console.log(`BlindAuction  ${deployment.blindAuction} (block ${deployment.deployBlock})`);
-    console.log(`Saved to ${file}`);
-    console.log("\nPut these in the root .env for the Indexer, then restart it:");
+    console.log(`BlindAuction  ${deployment.blindAuction} (블록 ${deployment.deployBlock})`);
+    console.log(`기록 위치: ${file}`);
+    console.log("\n아래 두 줄을 루트 .env에 넣고 Indexer를 켜세요 (이미 켜져 있으면 다시 켜세요):");
+    // These two lines are copied into .env as they are, so they stay exactly in this form.
     console.log(`CONTRACT_ADDRESS=${deployment.blindAuction}`);
     console.log(`DEPLOY_BLOCK=${deployment.deployBlock}`);
   }));

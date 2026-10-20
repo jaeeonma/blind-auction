@@ -74,8 +74,9 @@ export function readBidFile(key: BidKey, dir = bidsDir()): BidFile {
     raw = readFileSync(file, "utf8");
   } catch {
     throw new Error(
-      `No secret file for auction ${key.auctionId} and ${key.bidder} (${file}). ` +
-        "Without the value and secret the bid cannot be revealed and its deposit is forfeited (design.md 4번 Q4).",
+      `경매 ${key.auctionId}번 입찰의 secret 파일이 없습니다. ` +
+        "입찰가와 secret이 없으면 공개할 수 없고 보증금은 몰수됩니다 (design.md 4번 Q4). " +
+        `입찰자: ${key.bidder}, 찾은 위치: ${file}`,
     );
   }
   return JSON.parse(raw) as BidFile;

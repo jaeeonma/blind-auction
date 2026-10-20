@@ -151,7 +151,7 @@ describe("system: scripts → chain → Indexer → DB → API (design.md 14번)
 
     // design.md 7번 example through the real demo script.
     const out = await script("demo");
-    expect(out).toContain("All checks passed");
+    expect(out).toContain("모든 검사 통과");
     await waitIndexed();
 
     const a = await expectApiMatchesContract(0n);
@@ -172,9 +172,9 @@ describe("system: scripts → chain → Indexer → DB → API (design.md 14번)
 
     // A second auction: its status follows the block time as the scripts move it (design.md 10번).
     const minted = await script("mint-nft");
-    const token = /Minted token (\d+)/.exec(minted)![1]!;
+    const token = /토큰 (\d+)번 발행/.exec(minted)![1]!;
     const created = await script("create-auction", "--token", token, "--bidding", "10m", "--reveal", "1d");
-    expect(created).toContain("Created auction 1");
+    expect(created).toContain("경매 1번 생성");
 
     for (const step of [null, "reveal", "end"] as const) {
       if (step) await script("time-travel", "--auction", "1", "--to", step);
@@ -196,7 +196,7 @@ describe("system: scripts → chain → Indexer → DB → API (design.md 14번)
 
   it("2-a. bids placed while the Indexer process is down are all saved after it restarts", async () => {
     let indexer = await startIndexer();
-    const token = /Minted token (\d+)/.exec(await script("mint-nft"))![1]!;
+    const token = /토큰 (\d+)번 발행/.exec(await script("mint-nft"))![1]!;
     await script("create-auction", "--token", token, "--bidding", "10m", "--reveal", "1d");
     await script("bid", "--auction", "0", "--value", "3", "--deposit", "5", "--account", "1");
     await waitIndexed();
@@ -233,7 +233,7 @@ describe("system: scripts → chain → Indexer → DB → API (design.md 14번)
 
   it("2-b. killing the Indexer again and again while it catches up loses and duplicates nothing", async () => {
     // A backlog built while no Indexer runs: three demo runs, about 16 blocks each.
-    for (let i = 0; i < 3; i++) expect(await script("demo")).toContain("All checks passed");
+    for (let i = 0; i < 3; i++) expect(await script("demo")).toContain("모든 검사 통과");
     const head = await provider.getBlockNumber();
     expect(head - deployment.deployBlock).toBeGreaterThanOrEqual(30);
 
@@ -266,7 +266,7 @@ describe("system: scripts → chain → Indexer → DB → API (design.md 14번)
 
   it("3. reading the same events twice stores them once (design.md 14번)", async () => {
     let indexer = await startIndexer();
-    expect(await script("demo")).toContain("All checks passed");
+    expect(await script("demo")).toContain("모든 검사 통과");
     await waitIndexed();
     const before = await snapshot();
     expect(before.bids).toHaveLength(4);
@@ -286,7 +286,7 @@ describe("system: scripts → chain → Indexer → DB → API (design.md 14번)
 
   it("3-b. npm run indexer:reset rebuilds a DB copy that holds wrong rows (design.md 9번)", async () => {
     let indexer = await startIndexer();
-    expect(await script("demo")).toContain("All checks passed");
+    expect(await script("demo")).toContain("모든 검사 통과");
     await waitIndexed();
     const good = await snapshot();
     await indexer.kill();

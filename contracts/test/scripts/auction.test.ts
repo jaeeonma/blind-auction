@@ -21,7 +21,7 @@ describe("scripts: mint-nft, create-auction (design.md 12번)", function () {
       expect(parseDuration("10m")).to.equal(600n);
       expect(parseDuration("36h")).to.equal(36n * 3600n);
       expect(parseDuration("1d")).to.equal(DAY);
-      for (const bad of ["", "1w", "-1d", "1.5d", "ten"]) expect(() => parseDuration(bad)).to.throw(/Invalid duration/);
+      for (const bad of ["", "1w", "-1d", "1.5d", "ten"]) expect(() => parseDuration(bad)).to.throw(/알 수 없는 기간입니다/);
     });
 
     it("parses ETH amounts to wei", function () {
@@ -29,13 +29,13 @@ describe("scripts: mint-nft, create-auction (design.md 12번)", function () {
       expect(parseEthAmount("0.5")).to.equal(ethers.parseEther("0.5"));
       expect(parseEthAmount("0")).to.equal(0n);
       for (const bad of ["", "-1", "1e18", "abc", "0.1234567890123456789"]) {
-        expect(() => parseEthAmount(bad)).to.throw(/Invalid ETH amount/);
+        expect(() => parseEthAmount(bad)).to.throw(/알 수 없는 ETH 금액입니다/);
       }
     });
 
     it("parses ids", function () {
       expect(parseUint("token", "7")).to.equal(7n);
-      expect(() => parseUint("token", "x")).to.throw("--token must be a non-negative integer");
+      expect(() => parseUint("token", "x")).to.throw("--token 값은 0 이상의 정수여야 합니다");
     });
   });
 
@@ -77,7 +77,7 @@ describe("scripts: mint-nft, create-auction (design.md 12번)", function () {
       const tokenId = await mintNft(nft, seller.address);
       await expectRefused(
         createAuction(auction.connect(alice), nft.connect(alice), alice, tokenId, 600n, DAY),
-        /is owned by/,
+        /토큰 1번의 주인이 아닙니다/,
         alice,
       );
     });
@@ -86,21 +86,21 @@ describe("scripts: mint-nft, create-auction (design.md 12번)", function () {
       const { nft, auction, seller } = await loadFixture(deployed);
       const tokenId = await mintNft(nft, seller.address);
       await createAuction(auction, nft, seller, tokenId, 600n, DAY);
-      await expectRefused(createAuction(auction, nft, seller, tokenId, 600n, DAY), /already in an auction/, seller);
+      await expectRefused(createAuction(auction, nft, seller, tokenId, 600n, DAY), /토큰 1번은 이미 경매 중입니다/, seller);
     });
 
     it("refuses a token that does not exist", async function () {
       const { nft, auction, seller } = await loadFixture(deployed);
-      await expectRefused(createAuction(auction, nft, seller, 99n, 600n, DAY), "Token 99 does not exist", seller);
+      await expectRefused(createAuction(auction, nft, seller, 99n, 600n, DAY), "토큰 99번이 없습니다", seller);
     });
 
     it("refuses durations outside bidding 10m-5d / reveal 1d-2d", async function () {
       const { nft, auction, seller } = await loadFixture(deployed);
       const tokenId = await mintNft(nft, seller.address);
-      await expectRefused(createAuction(auction, nft, seller, tokenId, 599n, DAY), /Bidding duration/, seller);
-      await expectRefused(createAuction(auction, nft, seller, tokenId, 5n * DAY + 1n, DAY), /Bidding duration/, seller);
-      await expectRefused(createAuction(auction, nft, seller, tokenId, 600n, DAY - 1n), /Reveal duration/, seller);
-      await expectRefused(createAuction(auction, nft, seller, tokenId, 600n, 2n * DAY + 1n), /Reveal duration/, seller);
+      await expectRefused(createAuction(auction, nft, seller, tokenId, 599n, DAY), /입찰 기간은/, seller);
+      await expectRefused(createAuction(auction, nft, seller, tokenId, 5n * DAY + 1n, DAY), /입찰 기간은/, seller);
+      await expectRefused(createAuction(auction, nft, seller, tokenId, 600n, DAY - 1n), /공개 기간은/, seller);
+      await expectRefused(createAuction(auction, nft, seller, tokenId, 600n, 2n * DAY + 1n), /공개 기간은/, seller);
     });
   });
 });
