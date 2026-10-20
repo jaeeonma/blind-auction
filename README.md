@@ -54,6 +54,8 @@ curl http://localhost:3000/auctions/0    # Windows PowerShell: curl.exe
 
 `demo`는 실행할 때마다 새 NFT와 새 경매를 만들어 판매자(계정 0)와 입찰자 A~D(계정 1~4)로 예시를 끝까지 진행하고, 장부가 7번과 같은지 검사한다.
 
+**두 번째 실행부터:** 노드를 다시 켜면 체인이 처음부터 시작한다. `deploy` 후 `.env`를 고치고 `npm run indexer:reset`을 한 다음 Indexer를 켠다 (Indexer가 켜져 있으면 먼저 끈다, 5절 참고).
+
 **스크립트 직접 실행** (`cd contracts && npm run <이름> -- <옵션>`, design.md 12번)
 
 | 명령 | 예시 |
