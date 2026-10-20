@@ -163,7 +163,9 @@ describe("Indexer (design.md 9번)", () => {
     const indexer = newIndexer();
     await indexer.syncToHead();
 
-    // "DB looks wrong" recovery: reset the bookmark and read everything again (design.md 9번).
+    // Rewind only the bookmark to read every event a second time on top of the saved rows (design.md 14번).
+    // This is a test setup, not the recovery for a wrong DB: that is `npm run indexer:reset` (design.md 9번),
+    // which also empties the tables (see system test 3-b).
     await indexer.resetBookmark();
     expect(await indexer.lastProcessedBlock()).toBe(chain.deployBlock - 1);
     await indexer.syncToHead();

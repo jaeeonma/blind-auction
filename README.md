@@ -9,6 +9,7 @@ NFT를 ETH로 비공개 입찰하는 경매(Commit-Reveal). 입찰가는 해시�
 ## 목차
 
 1. [빠른 시작](#1-빠른-시작)
+- [Outline 요구사항 대응](#outline-요구사항-대응)
 2. [설계 방식과 이유](#2-설계-방식과-이유)
 3. [구성 요소와 연동](#3-구성-요소와-연동)
 4. [테스트](#4-테스트)
@@ -95,6 +96,64 @@ curl http://localhost:3000/auctions/0    # Windows PowerShell: curl.exe
 | `CONTRACT_ADDRESS`, `DEPLOY_BLOCK` | Indexer | `deploy`가 출력하는 값 |
 | `BATCH_SIZE`, `POLL_INTERVAL_MS`, `RETRY_DELAY_MS` | Indexer | 한 번에 읽을 블록 수, 새 블록 확인 주기, 오류 후 재시도 대기 |
 | `API_PORT` | API | 기본 3000 |
+
+## Outline 요구사항 대응
+
+과제 Outline의 요구사항마다 구현 위치와 확인하는 테스트를 한 줄로 정리했다. 이유와 자세한 내용은 design.md 번호를 따라가면 된다. 테스트 파일은 `contracts/test/`(단위)와 `tests/integration/`(통합)에 있다.
+
+**기능 요구사항**
+
+| Outline | 구현 | 확인하는 테스트 | design.md |
+|---|---|---|---|
+| 1. 경매 생성 (대상·기간·상태, 입찰 / 입찰 확인 / 종료 단계 구분) | `createAuction`(NFT를 컨트랙트가 보관), `phaseOf`(입찰 중 → 공개 중 → 종료 대기 → 종료). **"입찰 확인 단계"가 이 프로젝트의 공개(reveal) 단계** | `createAuction.test.ts` | 4, 5번 |
+| 2. 비공개 입찰 (체인을 봐도 입찰가를 알 수 없음) | `bid`: 해시(입찰가 + secret + 주소)와 보증금만 기록 | `bid.test.ts`, `reveal.test.ts`(해시 복사 공격) | 4번 Q3·Q11 |
+| 3. 입찰 확인 = 공개(reveal) (제출 정보가 해시와 일치하는지 검증, 무효 입찰 제외) | `reveal`: `msg.sender`로 해시를 다시 계산해 비교. 보증금 < 입찰가면 무효 | `reveal.test.ts` | 5, 7번 |
+| 4. 낙찰 및 정산 (낙찰자 결정, 낙찰 금액, 낙찰 안 된 참여자 자산, 결과 기록, 유효 입찰 없음) | 공개 때 장부 기록(`reveal`), `finalize`(낙찰자·몰수금, `AuctionFinalized` 이벤트), `withdraw` | `finalize.test.ts`, `withdraw.test.ts`, `flow.test.ts` | 7번, Q7 |
+| 5. 경매 조회 (전체·진행 중·종료, 상세·상태·결과, 사용자가 참여한 경매) | `api/`: `GET /auctions`, `/auctions/:auctionId`, `/users/:address/auctions` | `api.test.ts`, `system.test.ts` 1 | 11번 |
+
+**Blockchain Indexer**
+
+| Outline | 구현 | 확인하는 테스트 | design.md |
+|---|---|---|---|
+| Event 수집 | `indexer/indexer.ts`: 블록 범위로 `eth_getLogs` | `indexer.test.ts` | 6, 9번 |
+| PostgreSQL 저장 | `indexer/store.ts`, `db/schema.sql` | `schema.test.ts`, `indexer.test.ts` | 10번 |
+| 신규 Event 지속 수집 | `indexer/run.ts`: 따라잡은 뒤 주기적으로 새 블록 확인 | `system.test.ts` 1 (시간을 옮기며 상태 반영) | 9번 |
+| 중단 이후 데이터 복구 | 책갈피(`indexer_state`)를 이벤트와 한 DB 트랜잭션으로 저장, 다음 블록부터 이어 읽음 | `system.test.ts` 2-a·2-b | 9번 |
+| 중복 처리 방지 | PRIMARY KEY + `ON CONFLICT DO NOTHING`, 조건부 UPDATE | `system.test.ts` 3, `indexer.test.ts` | 9번 |
+
+**Client / Script, 데이터 설계**
+
+| Outline | 구현 | 확인하는 테스트 | design.md |
+|---|---|---|---|
+| 주요 기능을 실행·검증하는 Script | `contracts/tasks/`, `contracts/scripts/lib/`: deploy ~ withdraw, time-travel, demo | `contracts/test/scripts/`, `system.test.ts` | 12번 |
+| Blockchain에 기록되는 데이터 | 경매 정보, 해시, 보증금, 장부, 결과 (컨트랙트 상태와 이벤트) | `bid.test.ts`, `finalize.test.ts` | 8번 |
+| Database에 저장되는 데이터 | 이벤트를 옮긴 조회용 사본: auctions, bids, indexer_state. 블록체인이 기준 | `schema.test.ts`, `indexer.test.ts` | 8, 10번 |
+| 사용자에게 공개되는 데이터 | 체인 데이터 전부와 API 응답. 입찰가는 공개 후에만 | `api.test.ts` (공개 전 입찰가 `null`) | 8번 |
+| 입찰 중 공개되면 안 되는 데이터 | 입찰가와 secret: 입찰자 컴퓨터의 `.bids/`에만 저장, 체인·DB·Git에는 없음 | `contracts/test/scripts/bid.test.ts` | 8번 |
+
+**비기능 요구사항**
+
+| Outline | 구현 | 확인하는 테스트 | design.md |
+|---|---|---|---|
+| 안정성 (노드·Indexer 오류 후 다시 실행하면 누락 없이 수집) | 책갈피, 실패한 범위 재시도(`RETRY_DELAY_MS`) | `system.test.ts` 2-a·2-b, `indexer.test.ts`(노드 끊김·DB 오류) | 9번 |
+| 데이터 정합성 (불일치 시 동기화) | 블록체인 기준. `npm run indexer:reset`으로 사본을 다시 만듦 | `system.test.ts` 1, 3-b | 3, 9번 |
+| 보안 (권한, 잘못된 상태, 중복 실행, 자산 전송, 취약점) | 6절 표: 단계 검사, 1회 표시, Pull 출금, CEI + `nonReentrant` | 각 함수 테스트의 실패 경우, `withdraw.test.ts`(재진입 공격) | 13번 |
+
+**테스트 요구사항**
+
+| Outline | 확인하는 테스트 |
+|---|---|
+| Unit: 경매 생성 | `createAuction.test.ts` |
+| Unit: 입찰 | `bid.test.ts` |
+| Unit: 입찰 확인(공개) | `reveal.test.ts` |
+| Unit: 낙찰자 결정 | `reveal.test.ts`(최고가·동점), `finalize.test.ts` |
+| Unit: 경매 종료 | `finalize.test.ts` |
+| Unit: 자산 정산 | `withdraw.test.ts`, `flow.test.ts`(7번 예시) |
+| Unit: 비정상 Transaction | 각 파일의 실패해야 하는 경우 (design.md 14번 목록) |
+| Integration: Event 후 DB 반영 | `indexer.test.ts`, `system.test.ts` 1 |
+| Integration: Indexer 중단 후 재실행 | `system.test.ts` 2-a·2-b |
+| Integration: 중복 처리 방지 | `system.test.ts` 3, `indexer.test.ts` |
+| Integration: API로 조회 | `api.test.ts`, `system.test.ts` 1 |
 
 ## 2. 설계 방식과 이유
 
@@ -272,7 +331,7 @@ BlindAuction에서 빠진 분기 하나는 `finalize`의 재진입 잠금(`nonRe
 - **컨트랙트 코드:** NFT 표준과 재진입 잠금은 직접 만들지 않고 OpenZeppelin 5를 쓴다. 에러는 custom error로 구분한다.
 
 **알려진 한계** (design.md 16번)
-- 보증금이 입찰가 이상이어야 하므로, 보증금을 보면 입찰가의 상한이 드러난다.
+- 보증금이 입찰가 이상이어야 하므로, 보증금을 보면 입찰가의 상한이 드러난다. 대응: 보증금을 입찰가보다 넉넉히 내면 상한만 드러나고 실제 금액은 알 수 없다. 남는 보증금은 공개·종료 때 장부에 적혀 그대로 돌려받는다.
 - 경매 대상 NFT는 정상 동작하는 ERC-721이라고 가정한다. 전송을 막는 NFT면 종료가 실패해 보증금이 묶일 수 있다.
 - 블록 생성자는 블록 시간을 몇 초 조정할 수 있다. 입찰 기간이 최소 10분이라 영향이 작다.
 - 로컬 Hardhat 네트워크 기준이라 블록 재구성(reorg)은 다루지 않는다.
@@ -291,6 +350,10 @@ BlindAuction에서 빠진 분기 하나는 `finalize`의 재진입 잠금(`nonRe
 | 4. API | `feat/api` | [#6](https://github.com/jaeeonma/blind-auction/pull/6) | 조회 API, 개발용 노드 블록 생성 |
 | 5. 스크립트, 통합 테스트 | `feat/scripts`, `test/integration` | [#7](https://github.com/jaeeonma/blind-auction/pull/7), [#8](https://github.com/jaeeonma/blind-auction/pull/8) | 사용자 스크립트·demo, 시스템 테스트, 복구 명령 |
 | 6. README | `docs/readme` | [#9](https://github.com/jaeeonma/blind-auction/pull/9) | 이 문서, 빠른 시작 검증 |
+| 이후 보완 | `docs/sync-design` | [#10](https://github.com/jaeeonma/blind-auction/pull/10) | design.md 폴더 구조와 노드 재시작 절차, npm audit 한계 |
+| | `docs/readme-windows` | [#11](https://github.com/jaeeonma/blind-auction/pull/11) | Windows PowerShell 안내, 두 번째 실행 절차 |
+| | `docs/readme-clone` | [#12](https://github.com/jaeeonma/blind-auction/pull/12) | 빠른 시작에 저장소 받는 명령 |
+| | `feat/scripts-ko` | [#13](https://github.com/jaeeonma/blind-auction/pull/13) | 스크립트·demo 출력 한국어화 |
 
 **작업 규칙**
 - 커밋은 기능 하나가 테스트를 통과할 때마다 작게 나눈다. 메시지는 Conventional Commits + 한국어(`feat(contract): 입찰 기능 추가`). 6단계 전까지 `main`에 커밋 48개.
@@ -300,7 +363,7 @@ BlindAuction에서 빠진 분기 하나는 `finalize`의 재진입 잠금(`nonRe
 
 **설계 변경 이력**
 - **v1 → v2 (1단계):** 최저가, 경매 취소, 여러 번 입찰, 가짜 입찰을 빼고 규칙을 단순하게 했다. 반환 시점을 공개 때로 옮겼다.
-- **개발 중 승인을 받아 정하거나 바꾼 것** (모두 design.md에 반영)
+- **개발 중 승인을 받아 정하거나 바꾼 것** (design.md에 반영한 것은 번호로 표시)
 
 | 내용 | design.md |
 |---|---|
@@ -313,6 +376,7 @@ BlindAuction에서 빠진 분기 하나는 `finalize`의 재진입 잠금(`nonRe
 | API 주소, 종료 대기는 "진행 중"에 포함 | 11번 |
 | `deploy`·`demo` 스크립트, secret 파일을 전송 전에 저장 | 12번 |
 | 복구 명령이 테이블까지 비우도록 변경 | 9번 |
+| 스크립트 출력 한국어화 (안내·오류 문장과 task 설명. 상태 코드·값·오류 이름은 그대로) | - (출력 문장만 변경) |
 
 **개발 중 찾아서 고친 문제**
 - 실제 노드(HTTP)는 revert 오류를 테스트 네트워크와 다른 모양으로 돌려줘서, 스크립트가 "입찰 없음"을 알아보지 못하고 모든 첫 입찰이 실패했다. 개발 노드에서 직접 실행하다 발견했고, 두 모양을 모두 읽게 고친 뒤 그 모양을 테스트에 넣었다.
