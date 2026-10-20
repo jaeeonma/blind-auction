@@ -9,6 +9,7 @@ NFT를 ETH로 비공개 입찰하는 경매(Commit-Reveal). 입찰가는 해시�
 ## 목차
 
 1. [빠른 시작](#1-빠른-시작)
+- [Outline 요구사항 대응](#outline-요구사항-대응)
 2. [설계 방식과 이유](#2-설계-방식과-이유)
 3. [구성 요소와 연동](#3-구성-요소와-연동)
 4. [테스트](#4-테스트)
@@ -95,6 +96,64 @@ curl http://localhost:3000/auctions/0    # Windows PowerShell: curl.exe
 | `CONTRACT_ADDRESS`, `DEPLOY_BLOCK` | Indexer | `deploy`가 출력하는 값 |
 | `BATCH_SIZE`, `POLL_INTERVAL_MS`, `RETRY_DELAY_MS` | Indexer | 한 번에 읽을 블록 수, 새 블록 확인 주기, 오류 후 재시도 대기 |
 | `API_PORT` | API | 기본 3000 |
+
+## Outline 요구사항 대응
+
+과제 Outline의 요구사항마다 구현 위치와 확인하는 테스트를 한 줄로 정리했다. 이유와 자세한 내용은 design.md 번호를 따라가면 된다. 테스트 파일은 `contracts/test/`(단위)와 `tests/integration/`(통합)에 있다.
+
+**기능 요구사항**
+
+| Outline | 구현 | 확인하는 테스트 | design.md |
+|---|---|---|---|
+| 1. 경매 생성 (대상·기간·상태, 입찰 / 입찰 확인 / 종료 단계 구분) | `createAuction`(NFT를 컨트랙트가 보관), `phaseOf`(입찰 중 → 공개 중 → 종료 대기 → 종료). **"입찰 확인 단계"가 이 프로젝트의 공개(reveal) 단계** | `createAuction.test.ts` | 4, 5번 |
+| 2. 비공개 입찰 (체인을 봐도 입찰가를 알 수 없음) | `bid`: 해시(입찰가 + secret + 주소)와 보증금만 기록 | `bid.test.ts`, `reveal.test.ts`(해시 복사 공격) | 4번 Q3·Q11 |
+| 3. 입찰 확인 = 공개(reveal) (제출 정보가 해시와 일치하는지 검증, 무효 입찰 제외) | `reveal`: `msg.sender`로 해시를 다시 계산해 비교. 보증금 < 입찰가면 무효 | `reveal.test.ts` | 5, 7번 |
+| 4. 낙찰 및 정산 (낙찰자 결정, 낙찰 금액, 낙찰 안 된 참여자 자산, 결과 기록, 유효 입찰 없음) | 공개 때 장부 기록(`reveal`), `finalize`(낙찰자·몰수금, `AuctionFinalized` 이벤트), `withdraw` | `finalize.test.ts`, `withdraw.test.ts`, `flow.test.ts` | 7번, Q7 |
+| 5. 경매 조회 (전체·진행 중·종료, 상세·상태·결과, 사용자가 참여한 경매) | `api/`: `GET /auctions`, `/auctions/:auctionId`, `/users/:address/auctions` | `api.test.ts`, `system.test.ts` 1 | 11번 |
+
+**Blockchain Indexer**
+
+| Outline | 구현 | 확인하는 테스트 | design.md |
+|---|---|---|---|
+| Event 수집 | `indexer/indexer.ts`: 블록 범위로 `eth_getLogs` | `indexer.test.ts` | 6, 9번 |
+| PostgreSQL 저장 | `indexer/store.ts`, `db/schema.sql` | `schema.test.ts`, `indexer.test.ts` | 10번 |
+| 신규 Event 지속 수집 | `indexer/run.ts`: 따라잡은 뒤 주기적으로 새 블록 확인 | `system.test.ts` 1 (시간을 옮기며 상태 반영) | 9번 |
+| 중단 이후 데이터 복구 | 책갈피(`indexer_state`)를 이벤트와 한 DB 트랜잭션으로 저장, 다음 블록부터 이어 읽음 | `system.test.ts` 2-a·2-b | 9번 |
+| 중복 처리 방지 | PRIMARY KEY + `ON CONFLICT DO NOTHING`, 조건부 UPDATE | `system.test.ts` 3, `indexer.test.ts` | 9번 |
+
+**Client / Script, 데이터 설계**
+
+| Outline | 구현 | 확인하는 테스트 | design.md |
+|---|---|---|---|
+| 주요 기능을 실행·검증하는 Script | `contracts/tasks/`, `contracts/scripts/lib/`: deploy ~ withdraw, time-travel, demo | `contracts/test/scripts/`, `system.test.ts` | 12번 |
+| Blockchain에 기록되는 데이터 | 경매 정보, 해시, 보증금, 장부, 결과 (컨트랙트 상태와 이벤트) | `bid.test.ts`, `finalize.test.ts` | 8번 |
+| Database에 저장되는 데이터 | 이벤트를 옮긴 조회용 사본: auctions, bids, indexer_state. 블록체인이 기준 | `schema.test.ts`, `indexer.test.ts` | 8, 10번 |
+| 사용자에게 공개되는 데이터 | 체인 데이터 전부와 API 응답. 입찰가는 공개 후에만 | `api.test.ts` (공개 전 입찰가 `null`) | 8번 |
+| 입찰 중 공개되면 안 되는 데이터 | 입찰가와 secret: 입찰자 컴퓨터의 `.bids/`에만 저장, 체인·DB·Git에는 없음 | `contracts/test/scripts/bid.test.ts` | 8번 |
+
+**비기능 요구사항**
+
+| Outline | 구현 | 확인하는 테스트 | design.md |
+|---|---|---|---|
+| 안정성 (노드·Indexer 오류 후 다시 실행하면 누락 없이 수집) | 책갈피, 실패한 범위 재시도(`RETRY_DELAY_MS`) | `system.test.ts` 2-a·2-b, `indexer.test.ts`(노드 끊김·DB 오류) | 9번 |
+| 데이터 정합성 (불일치 시 동기화) | 블록체인 기준. `npm run indexer:reset`으로 사본을 다시 만듦 | `system.test.ts` 1, 3-b | 3, 9번 |
+| 보안 (권한, 잘못된 상태, 중복 실행, 자산 전송, 취약점) | 6절 표: 단계 검사, 1회 표시, Pull 출금, CEI + `nonReentrant` | 각 함수 테스트의 실패 경우, `withdraw.test.ts`(재진입 공격) | 13번 |
+
+**테스트 요구사항**
+
+| Outline | 확인하는 테스트 |
+|---|---|
+| Unit: 경매 생성 | `createAuction.test.ts` |
+| Unit: 입찰 | `bid.test.ts` |
+| Unit: 입찰 확인(공개) | `reveal.test.ts` |
+| Unit: 낙찰자 결정 | `reveal.test.ts`(최고가·동점), `finalize.test.ts` |
+| Unit: 경매 종료 | `finalize.test.ts` |
+| Unit: 자산 정산 | `withdraw.test.ts`, `flow.test.ts`(7번 예시) |
+| Unit: 비정상 Transaction | 각 파일의 실패해야 하는 경우 (design.md 14번 목록) |
+| Integration: Event 후 DB 반영 | `indexer.test.ts`, `system.test.ts` 1 |
+| Integration: Indexer 중단 후 재실행 | `system.test.ts` 2-a·2-b |
+| Integration: 중복 처리 방지 | `system.test.ts` 3, `indexer.test.ts` |
+| Integration: API로 조회 | `api.test.ts`, `system.test.ts` 1 |
 
 ## 2. 설계 방식과 이유
 
