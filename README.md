@@ -291,6 +291,10 @@ BlindAuction에서 빠진 분기 하나는 `finalize`의 재진입 잠금(`nonRe
 | 4. API | `feat/api` | [#6](https://github.com/jaeeonma/blind-auction/pull/6) | 조회 API, 개발용 노드 블록 생성 |
 | 5. 스크립트, 통합 테스트 | `feat/scripts`, `test/integration` | [#7](https://github.com/jaeeonma/blind-auction/pull/7), [#8](https://github.com/jaeeonma/blind-auction/pull/8) | 사용자 스크립트·demo, 시스템 테스트, 복구 명령 |
 | 6. README | `docs/readme` | [#9](https://github.com/jaeeonma/blind-auction/pull/9) | 이 문서, 빠른 시작 검증 |
+| 이후 보완 | `docs/sync-design` | [#10](https://github.com/jaeeonma/blind-auction/pull/10) | design.md 폴더 구조와 노드 재시작 절차, npm audit 한계 |
+| | `docs/readme-windows` | [#11](https://github.com/jaeeonma/blind-auction/pull/11) | Windows PowerShell 안내, 두 번째 실행 절차 |
+| | `docs/readme-clone` | [#12](https://github.com/jaeeonma/blind-auction/pull/12) | 빠른 시작에 저장소 받는 명령 |
+| | `feat/scripts-ko` | [#13](https://github.com/jaeeonma/blind-auction/pull/13) | 스크립트·demo 출력 한국어화 |
 
 **작업 규칙**
 - 커밋은 기능 하나가 테스트를 통과할 때마다 작게 나눈다. 메시지는 Conventional Commits + 한국어(`feat(contract): 입찰 기능 추가`). 6단계 전까지 `main`에 커밋 48개.
@@ -300,7 +304,7 @@ BlindAuction에서 빠진 분기 하나는 `finalize`의 재진입 잠금(`nonRe
 
 **설계 변경 이력**
 - **v1 → v2 (1단계):** 최저가, 경매 취소, 여러 번 입찰, 가짜 입찰을 빼고 규칙을 단순하게 했다. 반환 시점을 공개 때로 옮겼다.
-- **개발 중 승인을 받아 정하거나 바꾼 것** (모두 design.md에 반영)
+- **개발 중 승인을 받아 정하거나 바꾼 것** (design.md에 반영한 것은 번호로 표시)
 
 | 내용 | design.md |
 |---|---|
@@ -313,6 +317,7 @@ BlindAuction에서 빠진 분기 하나는 `finalize`의 재진입 잠금(`nonRe
 | API 주소, 종료 대기는 "진행 중"에 포함 | 11번 |
 | `deploy`·`demo` 스크립트, secret 파일을 전송 전에 저장 | 12번 |
 | 복구 명령이 테이블까지 비우도록 변경 | 9번 |
+| 스크립트 출력 한국어화 (안내·오류 문장과 task 설명. 상태 코드·값·오류 이름은 그대로) | - (출력 문장만 변경) |
 
 **개발 중 찾아서 고친 문제**
 - 실제 노드(HTTP)는 revert 오류를 테스트 네트워크와 다른 모양으로 돌려줘서, 스크립트가 "입찰 없음"을 알아보지 못하고 모든 첫 입찰이 실패했다. 개발 노드에서 직접 실행하다 발견했고, 두 모양을 모두 읽게 고친 뒤 그 모양을 테스트에 넣었다.
