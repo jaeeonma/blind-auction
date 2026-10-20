@@ -172,9 +172,9 @@ describe("system: scripts → chain → Indexer → DB → API (design.md 14번)
 
     // A second auction: its status follows the block time as the scripts move it (design.md 10번).
     const minted = await script("mint-nft");
-    const token = /Minted token (\d+)/.exec(minted)![1]!;
+    const token = /토큰 (\d+)번 발행/.exec(minted)![1]!;
     const created = await script("create-auction", "--token", token, "--bidding", "10m", "--reveal", "1d");
-    expect(created).toContain("Created auction 1");
+    expect(created).toContain("경매 1번 생성");
 
     for (const step of [null, "reveal", "end"] as const) {
       if (step) await script("time-travel", "--auction", "1", "--to", step);
@@ -196,7 +196,7 @@ describe("system: scripts → chain → Indexer → DB → API (design.md 14번)
 
   it("2-a. bids placed while the Indexer process is down are all saved after it restarts", async () => {
     let indexer = await startIndexer();
-    const token = /Minted token (\d+)/.exec(await script("mint-nft"))![1]!;
+    const token = /토큰 (\d+)번 발행/.exec(await script("mint-nft"))![1]!;
     await script("create-auction", "--token", token, "--bidding", "10m", "--reveal", "1d");
     await script("bid", "--auction", "0", "--value", "3", "--deposit", "5", "--account", "1");
     await waitIndexed();

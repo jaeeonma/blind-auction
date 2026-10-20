@@ -26,7 +26,7 @@ export function scriptAction<A extends TaskArguments>(action: ActionType<A>): Ac
  */
 export function ensureLocalhost(hre: HardhatRuntimeEnvironment): void {
   if (hre.network.name !== "localhost") {
-    throw new Error(`Run scripts against the local node: use "npm run <script>" (got network "${hre.network.name}")`);
+    throw new Error(`로컬 노드에서 실행해야 합니다. "npm run <스크립트 이름>"으로 실행하세요. 지금 네트워크: ${hre.network.name}`);
   }
 }
 
@@ -34,7 +34,9 @@ export function ensureLocalhost(hre: HardhatRuntimeEnvironment): void {
 export async function accountAt(hre: HardhatRuntimeEnvironment, index: number): Promise<HardhatEthersSigner> {
   const signers = await hre.ethers.getSigners();
   const signer = signers[index];
-  if (!Number.isInteger(index) || !signer) throw new Error(`--account must be 0-${signers.length - 1}, got ${index}`);
+  if (!Number.isInteger(index) || !signer) {
+    throw new Error(`--account 값은 0~${signers.length - 1} 사이여야 합니다. 입력: ${index}`);
+  }
   return signer;
 }
 
