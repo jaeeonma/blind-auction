@@ -13,10 +13,10 @@ export interface FinalizedAuction {
 /** 종료 (design.md 12번). Anyone may call it once the reveal phase is over (Q8). */
 export async function finalizeAuction(auction: BlindAuction, auctionId: bigint): Promise<FinalizedAuction> {
   const phase = await phaseOf(auction, auctionId);
-  if (phase === "finalized") throw new Error(`Auction ${auctionId} is already finalized`);
+  if (phase === "finalized") throw new Error(`경매 ${auctionId}번은 이미 종료됐습니다`);
   if (phase !== "awaiting_finalize") {
     const { revealEnd } = await auction.getAuction(auctionId);
-    throw new Error(`Auction ${auctionId} cannot be finalized yet (now: ${phase}); reveal ends ${formatTime(revealEnd)}`);
+    throw new Error(`경매 ${auctionId}번은 아직 종료할 수 없습니다 (현재: ${phase}). 공개 마감: ${formatTime(revealEnd)}`);
   }
 
   const receipt = await (await auction.finalize(auctionId)).wait();
@@ -30,7 +30,7 @@ export async function finalizeAuction(auction: BlindAuction, auctionId: bigint):
       };
     }
   }
-  throw new Error("AuctionFinalized event not found in the transaction");
+  throw new Error("트랜잭션에서 AuctionFinalized 이벤트를 찾지 못했습니다");
 }
 
 /**
@@ -40,12 +40,12 @@ export async function finalizeAuction(auction: BlindAuction, auctionId: bigint):
 export async function withdrawAll(auction: BlindAuction, account: Signer): Promise<bigint> {
   const address = await account.getAddress();
   const pending = await auction.pendingWithdrawals(address);
-  if (pending === 0n) throw new Error(`Nothing to withdraw for ${address}`);
+  if (pending === 0n) throw new Error(`출금할 금액이 없는 지갑입니다: ${address}`);
 
   const receipt = await (await auction.withdraw()).wait();
   for (const log of receipt!.logs) {
     const parsed = auction.interface.parseLog(log);
     if (parsed?.name === "Withdrawn") return parsed.args.amount;
   }
-  throw new Error("Withdrawn event not found in the transaction");
+  throw new Error("트랜잭션에서 Withdrawn 이벤트를 찾지 못했습니다");
 }

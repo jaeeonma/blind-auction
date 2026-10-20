@@ -13,7 +13,7 @@ describe("scripts: time-travel (design.md 12번)", function () {
     // Hardhat adds the offset to the wall clock, so real seconds that passed are included too.
     expect(after >= before + 600n && after <= before + 610n, `moved to +${after - before}s`).to.equal(true);
     expect(await latestBlockTime(ethers.provider)).to.equal(after);
-    await expect(increaseTime(ethers.provider, 0n)).to.be.rejectedWith("Seconds must be positive");
+    await expect(increaseTime(ethers.provider, 0n)).to.be.rejectedWith("앞당길 시간은 0초보다 커야 합니다");
   });
 
   it("moveTimeTo lands exactly on bidding end and reveal end, so the phase changes right there", async function () {

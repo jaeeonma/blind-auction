@@ -119,7 +119,7 @@ describe("scripts: bid, reveal with secret files (design.md 12번)", function ()
       const f = await loadFixture(auctionCreatedFixture);
       const placed = await placeBid(f.auction.connect(f.carol), f.carol, f.auctionId, eth("3"), eth("2"), dir);
       expect(placed.warnings).to.have.length(1);
-      expect(placed.warnings[0]).to.match(/INVALID/);
+      expect(placed.warnings[0]).to.match(/무효 입찰/);
       expect((await f.auction.getBid(f.auctionId, f.carol.address)).deposit).to.equal(eth("2"));
     });
 
@@ -132,7 +132,7 @@ describe("scripts: bid, reveal with secret files (design.md 12번)", function ()
       await expectNoTransaction(
         f.alice,
         () => placeBid(auction, f.alice, f.auctionId, eth("2"), eth("2"), dir),
-        /already bid/,
+        /경매 0번에 이미 입찰한 지갑입니다/,
       );
       expect(readBidFile(await keyOf(f, f.alice), dir)).to.deep.equal(before);
     });
@@ -140,12 +140,12 @@ describe("scripts: bid, reveal with secret files (design.md 12번)", function ()
     it("refuses outside the bidding phase and for an unknown auction", async function () {
       const f = await loadFixture(auctionCreatedFixture);
       const auction = f.auction.connect(f.alice);
-      await expectNoTransaction(f.alice, () => placeBid(auction, f.alice, 99n, eth("1"), eth("1"), dir), /does not exist/);
+      await expectNoTransaction(f.alice, () => placeBid(auction, f.alice, 99n, eth("1"), eth("1"), dir), /경매 99번이 없습니다/);
       await time.increaseTo(f.biddingEnd);
       await expectNoTransaction(
         f.alice,
         () => placeBid(auction, f.alice, f.auctionId, eth("1"), eth("1"), dir),
-        /not in the bidding phase \(now: revealing\)/,
+        /경매 0번은 입찰 기간이 아닙니다 \(현재: revealing\)/,
       );
       expect(readdirSync(dir)).to.deep.equal([]); // nothing saved for a refused bid
     });
@@ -184,7 +184,7 @@ describe("scripts: bid, reveal with secret files (design.md 12번)", function ()
       await expectNoTransaction(
         f.alice,
         () => revealFromFile(f.auction.connect(f.alice), f.alice, f.auctionId, dir),
-        /does not match the bid on chain/,
+        /secret 파일이 체인의 입찰과 맞지 않습니다/,
       );
     });
 
@@ -194,7 +194,7 @@ describe("scripts: bid, reveal with secret files (design.md 12번)", function ()
       await expectNoTransaction(
         f.alice,
         () => revealFromFile(f.auction.connect(f.alice), f.alice, f.auctionId, dir),
-        /No secret file.*forfeited/,
+        /secret 파일이 없습니다.*몰수/,
       );
     });
 
@@ -203,13 +203,13 @@ describe("scripts: bid, reveal with secret files (design.md 12번)", function ()
       await placeBid(f.auction.connect(f.alice), f.alice, f.auctionId, eth("3"), eth("5"), dir);
       const reveal = (who: typeof f.alice) => revealFromFile(f.auction.connect(who), who, f.auctionId, dir);
 
-      await expectNoTransaction(f.alice, () => reveal(f.alice), /not in the reveal phase \(now: bidding\)/);
+      await expectNoTransaction(f.alice, () => reveal(f.alice), /경매 0번은 공개 기간이 아닙니다 \(현재: bidding\)/);
       await time.increaseTo(f.biddingEnd);
-      await expectNoTransaction(f.bob, () => reveal(f.bob), /has no bid/);
+      await expectNoTransaction(f.bob, () => reveal(f.bob), /경매 0번에 입찰하지 않은 지갑입니다/);
       await reveal(f.alice);
-      await expectNoTransaction(f.alice, () => reveal(f.alice), /already revealed/);
+      await expectNoTransaction(f.alice, () => reveal(f.alice), /경매 0번에서 이미 공개한 입찰입니다/);
       await time.increaseTo(f.revealEnd);
-      await expectNoTransaction(f.alice, () => reveal(f.alice), /not in the reveal phase \(now: awaiting_finalize\)/);
+      await expectNoTransaction(f.alice, () => reveal(f.alice), /공개 기간이 아닙니다 \(현재: awaiting_finalize\)/);
     });
   });
 });

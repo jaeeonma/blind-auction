@@ -9,7 +9,7 @@ export interface DevProvider {
 
 export async function latestBlockTime(provider: DevProvider): Promise<bigint> {
   const block = await provider.getBlock("latest");
-  if (!block) throw new Error("Could not read the latest block");
+  if (!block) throw new Error("최신 블록을 읽지 못했습니다");
   return BigInt(block.timestamp);
 }
 
@@ -19,7 +19,7 @@ export async function latestBlockTime(provider: DevProvider): Promise<bigint> {
  * included. Use moveTimeTo to land on an exact time.
  */
 export async function increaseTime(provider: DevProvider, seconds: bigint): Promise<bigint> {
-  if (seconds <= 0n) throw new Error("Seconds must be positive");
+  if (seconds <= 0n) throw new Error("앞당길 시간은 0초보다 커야 합니다");
   await provider.send("evm_increaseTime", [Number(seconds)]);
   await provider.send("evm_mine", []);
   return latestBlockTime(provider);

@@ -61,14 +61,14 @@ describe("scripts: finalize, withdraw (design.md 12번)", function () {
 
   it("refuses to finalize before the reveal phase ends, twice, or an unknown auction", async function () {
     const f = await loadFixture(auctionCreatedFixture);
-    await expectNoTransaction(f.seller, () => finalizeAuction(f.auction, f.auctionId), /cannot be finalized yet \(now: bidding\); reveal ends/);
+    await expectNoTransaction(f.seller, () => finalizeAuction(f.auction, f.auctionId), /경매 0번은 아직 종료할 수 없습니다 \(현재: bidding\)\. 공개 마감: /);
     await time.increaseTo(f.biddingEnd);
-    await expectNoTransaction(f.seller, () => finalizeAuction(f.auction, f.auctionId), /now: revealing/);
-    await expectNoTransaction(f.seller, () => finalizeAuction(f.auction, 99n), /does not exist/);
+    await expectNoTransaction(f.seller, () => finalizeAuction(f.auction, f.auctionId), /현재: revealing/);
+    await expectNoTransaction(f.seller, () => finalizeAuction(f.auction, 99n), /경매 99번이 없습니다/);
 
     await time.increaseTo(f.revealEnd);
     await finalizeAuction(f.auction, f.auctionId);
-    await expectNoTransaction(f.seller, () => finalizeAuction(f.auction, f.auctionId), /already finalized/);
+    await expectNoTransaction(f.seller, () => finalizeAuction(f.auction, f.auctionId), /경매 0번은 이미 종료됐습니다/);
   });
 
   it("withdraw pays out each ledger: A 5, C 2, seller 7 (design.md 7번)", async function () {
@@ -93,10 +93,10 @@ describe("scripts: finalize, withdraw (design.md 12번)", function () {
   it("refuses to withdraw with an empty ledger, and a second withdraw", async function () {
     const f = await exampleRevealed();
     // B is the current highest bidder: nothing credited before finalize.
-    await expectNoTransaction(f.B, () => withdrawAll(f.auction.connect(f.B), f.B), /Nothing to withdraw/);
+    await expectNoTransaction(f.B, () => withdrawAll(f.auction.connect(f.B), f.B), /출금할 금액이 없는 지갑입니다/);
 
     // A was displaced by B, so A can withdraw already during the reveal phase.
     expect(await withdrawAll(f.auction.connect(f.A), f.A)).to.equal(eth("5"));
-    await expectNoTransaction(f.A, () => withdrawAll(f.auction.connect(f.A), f.A), /Nothing to withdraw/);
+    await expectNoTransaction(f.A, () => withdrawAll(f.auction.connect(f.A), f.A), /출금할 금액이 없는 지갑입니다/);
   });
 });

@@ -39,7 +39,7 @@ export async function phaseOf(auction: BlindAuction, auctionId: bigint): Promise
   try {
     return PHASE_NAMES[Number(await auction.phaseOf(auctionId))]!;
   } catch (err) {
-    if (revertName(auction, err) === "AuctionNotFound") throw new Error(`Auction ${auctionId} does not exist`);
+    if (revertName(auction, err) === "AuctionNotFound") throw new Error(`경매 ${auctionId}번이 없습니다`);
     throw err;
   }
 }
@@ -90,17 +90,17 @@ export async function placeBid(
   const bidderAddress = await bidder.getAddress();
 
   const phase = await phaseOf(auction, auctionId);
-  if (phase !== "bidding") throw new Error(`Auction ${auctionId} is not in the bidding phase (now: ${phase})`);
+  if (phase !== "bidding") throw new Error(`경매 ${auctionId}번은 입찰 기간이 아닙니다 (현재: ${phase})`);
   if (await findBid(auction, auctionId, bidderAddress)) {
     // The existing file (if any) is left untouched: it holds the secret of the bid on chain.
-    throw new Error(`${bidderAddress} already bid in auction ${auctionId} (one bid per wallet, design.md 4번 Q10)`);
+    throw new Error(`경매 ${auctionId}번에 이미 입찰한 지갑입니다 (지갑당 한 번, design.md 4번 Q10): ${bidderAddress}`);
   }
 
   const warnings: string[] = [];
   if (deposit < value) {
     warnings.push(
-      `Deposit ${deposit} wei is less than the value ${value} wei: the bid will be INVALID at reveal ` +
-        "and only the deposit is refunded (design.md 4번 Q3-1).",
+      "보증금이 입찰가보다 적어서 공개하면 무효 입찰이 되고 보증금만 돌려받습니다 (design.md 4번 Q3-1). " +
+        `보증금: ${deposit} wei, 입찰가: ${value} wei`,
     );
   }
 
@@ -145,17 +145,17 @@ export async function revealFromFile(
   const bidderAddress = await bidder.getAddress();
 
   const phase = await phaseOf(auction, auctionId);
-  if (phase !== "revealing") throw new Error(`Auction ${auctionId} is not in the reveal phase (now: ${phase})`);
+  if (phase !== "revealing") throw new Error(`경매 ${auctionId}번은 공개 기간이 아닙니다 (현재: ${phase})`);
   const onChain = await findBid(auction, auctionId, bidderAddress);
-  if (!onChain) throw new Error(`${bidderAddress} has no bid in auction ${auctionId}`);
-  if (onChain.revealed) throw new Error(`The bid of ${bidderAddress} in auction ${auctionId} is already revealed`);
+  if (!onChain) throw new Error(`경매 ${auctionId}번에 입찰하지 않은 지갑입니다: ${bidderAddress}`);
+  if (onChain.revealed) throw new Error(`경매 ${auctionId}번에서 이미 공개한 입찰입니다: ${bidderAddress}`);
 
   const saved = readBidFile(await bidKey(auction, bidder, auctionId), dir);
   const value = BigInt(saved.value);
   // Check the file against the hash on chain before sending. A wrong or damaged file is reported
   // here instead of as a CommitmentMismatch revert that costs gas.
   if (computeCommitment(value, saved.secret, bidderAddress) !== onChain.commitment) {
-    throw new Error("The secret file does not match the bid on chain (wrong or damaged file); not sending the reveal");
+    throw new Error("secret 파일이 체인의 입찰과 맞지 않습니다 (잘못되거나 손상된 파일). 공개를 보내지 않았습니다");
   }
 
   const receipt = await (await auction.reveal(auctionId, value, saved.secret)).wait();
@@ -163,5 +163,5 @@ export async function revealFromFile(
     const parsed = auction.interface.parseLog(log);
     if (parsed?.name === "BidRevealed") return { value, valid: parsed.args.valid };
   }
-  throw new Error("BidRevealed event not found in the transaction");
+  throw new Error("트랜잭션에서 BidRevealed 이벤트를 찾지 못했습니다");
 }
