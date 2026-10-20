@@ -267,6 +267,7 @@ BlindAuction에서 빠진 분기 하나는 `finalize`의 재진입 잠금(`nonRe
 - 경매 대상 NFT는 정상 동작하는 ERC-721이라고 가정한다. 전송을 막는 NFT면 종료가 실패해 보증금이 묶일 수 있다.
 - 블록 생성자는 블록 시간을 몇 초 조정할 수 있다. 입찰 기간이 최소 10분이라 영향이 작다.
 - 로컬 Hardhat 네트워크 기준이라 블록 재구성(reorg)은 다루지 않는다.
+- `contracts/`에서 `npm audit`을 실행하면 Hardhat 도구 묶음(hardhat-toolbox)의 개발 의존성에서 경고가 나온다. 컴파일·테스트에만 쓰는 도구이고 배포되는 컨트랙트에는 포함되지 않는다. 컨트랙트가 쓰는 OpenZeppelin(`npm audit --omit=dev`)과 루트 패키지는 경고가 없다.
 
 ## 7. 개발 과정
 
