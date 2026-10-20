@@ -42,8 +42,8 @@ describe("scripts: demo (design.md 7번 example)", function () {
       expect(r.ledger).to.deep.equal(EXAMPLE.ledger);
       expect(r.withdrawn).to.deep.equal({ seller: eth("7"), A: eth("5"), B: 0n, C: eth("2"), D: 0n });
     }
-    expect(lines.filter((l) => l.includes("All checks passed"))).to.have.length(2);
-    expect(lines.some((l) => l.includes("left over"))).to.equal(false);
+    expect(lines.filter((l) => l.includes("모든 검사 통과"))).to.have.length(2);
+    expect(lines.some((l) => l.includes("남은 장부") || l.includes("이전에 남은 금액"))).to.equal(false);
   });
 
   it("keeps a ledger left over from an earlier auction apart and shows it separately", async function () {
@@ -67,9 +67,9 @@ describe("scripts: demo (design.md 7번 example)", function () {
     expect(r.ledger).to.deep.equal(EXAMPLE.ledger); // this auction's numbers are unaffected
     expect(r.withdrawn.A).to.equal(eth("6")); // 5 from this auction + 1 left over
     expect(f.lines).to.include.members([
-      "Ledger left over from earlier auctions (kept apart from this demo, paid out together at withdraw):",
+      "이전 경매에서 출금하지 않고 남은 장부 (이번 demo와 따로 보고, 출금할 때 함께 나감):",
     ]);
-    expect(f.lines.some((l) => l.includes("withdrew 6.0 ETH (this auction 5.0 ETH + left over 1.0 ETH)"))).to.equal(true);
+    expect(f.lines.some((l) => l.includes("출금 6.0 ETH (이번 경매 5.0 ETH + 이전에 남은 금액 1.0 ETH)"))).to.equal(true);
     // The contract still holds the other auction's money, and only that.
     expect(await ethers.provider.getBalance(await auction.getAddress())).to.equal(otherAuctionHeld);
   });

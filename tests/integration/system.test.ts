@@ -151,7 +151,7 @@ describe("system: scripts → chain → Indexer → DB → API (design.md 14번)
 
     // design.md 7번 example through the real demo script.
     const out = await script("demo");
-    expect(out).toContain("All checks passed");
+    expect(out).toContain("모든 검사 통과");
     await waitIndexed();
 
     const a = await expectApiMatchesContract(0n);
@@ -233,7 +233,7 @@ describe("system: scripts → chain → Indexer → DB → API (design.md 14번)
 
   it("2-b. killing the Indexer again and again while it catches up loses and duplicates nothing", async () => {
     // A backlog built while no Indexer runs: three demo runs, about 16 blocks each.
-    for (let i = 0; i < 3; i++) expect(await script("demo")).toContain("All checks passed");
+    for (let i = 0; i < 3; i++) expect(await script("demo")).toContain("모든 검사 통과");
     const head = await provider.getBlockNumber();
     expect(head - deployment.deployBlock).toBeGreaterThanOrEqual(30);
 
@@ -266,7 +266,7 @@ describe("system: scripts → chain → Indexer → DB → API (design.md 14번)
 
   it("3. reading the same events twice stores them once (design.md 14번)", async () => {
     let indexer = await startIndexer();
-    expect(await script("demo")).toContain("All checks passed");
+    expect(await script("demo")).toContain("모든 검사 통과");
     await waitIndexed();
     const before = await snapshot();
     expect(before.bids).toHaveLength(4);
@@ -286,7 +286,7 @@ describe("system: scripts → chain → Indexer → DB → API (design.md 14번)
 
   it("3-b. npm run indexer:reset rebuilds a DB copy that holds wrong rows (design.md 9번)", async () => {
     let indexer = await startIndexer();
-    expect(await script("demo")).toContain("All checks passed");
+    expect(await script("demo")).toContain("모든 검사 통과");
     await waitIndexed();
     const good = await snapshot();
     await indexer.kill();
