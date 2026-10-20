@@ -18,7 +18,7 @@ NFT를 ETH로 비공개 입찰하는 경매(Commit-Reveal). 입찰가는 해시�
 
 ## 1. 빠른 시작
 
-**필요한 것:** Node.js 22.12 이상(Vitest 5 요구 사항, 개발은 24에서 확인), Docker Desktop. Windows·macOS·Linux 모두 같은 명령으로 동작한다.
+**필요한 것:** Node.js 22.12 이상(Vitest 5 요구 사항, 개발은 24에서 확인), Docker Desktop. Windows·macOS·Linux에서 동작한다 (Windows PowerShell은 아래 안내 참고).
 
 ```bash
 # 0. 설치 (처음 한 번)
@@ -47,7 +47,14 @@ cd contracts && npm run demo
 curl http://localhost:3000/auctions/0    # Windows PowerShell: curl.exe
 ```
 
+**Windows PowerShell 5.1에서 실행할 때**
+- `npm.ps1 파일을 로드할 수 없습니다`(실행 정책 오류)가 나오면 `npm` 대신 `npm.cmd`로 실행한다. 예: `npm.cmd run demo`
+- `&&`를 쓸 수 없으므로 `cd contracts && npm run node`는 `cd contracts`와 `npm.cmd run node`처럼 한 줄씩 나눠 입력한다.
+- 명령 프롬프트(cmd)에서는 `npm`과 `&&`를 그대로 쓸 수 있다.
+
 `demo`는 실행할 때마다 새 NFT와 새 경매를 만들어 판매자(계정 0)와 입찰자 A~D(계정 1~4)로 예시를 끝까지 진행하고, 장부가 7번과 같은지 검사한다.
+
+**두 번째 실행부터:** 노드를 다시 켜면 체인이 처음부터 시작한다. `deploy` 후 `.env`를 고치고 `npm run indexer:reset`을 한 다음 Indexer를 켠다 (Indexer가 켜져 있으면 먼저 끈다, 5절 참고).
 
 **스크립트 직접 실행** (`cd contracts && npm run <이름> -- <옵션>`, design.md 12번)
 
