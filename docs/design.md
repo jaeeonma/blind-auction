@@ -57,12 +57,18 @@ NFT를 ETH로 비공개 입찰하는 경매. 입찰가는 해시로 숨겨서 �
 **폴더 구조**
 
 ```
-contracts/            컨트랙트, 컨트랙트 테스트, 사용자 스크립트(scripts/)
-indexer/              이벤트 수집 → DB
-api/                  조회 API (Express)
-db/                   테이블 생성 SQL
-tests/                통합 테스트
-docker-compose.yml    PostgreSQL
+contracts/                Hardhat 패키지
+  contracts/              BlindAuction.sol, MockNFT.sol, test/ReentrantBidder.sol(테스트용 재진입 공격 컨트랙트)
+  tasks/                  사용자 스크립트 명령 (Hardhat task, npm run <이름>)
+  scripts/lib/            사용자 스크립트의 실제 처리 (task와 demo가 같이 쓴다)
+  test/                   컨트랙트 단위 테스트, test/scripts/ 스크립트 테스트
+indexer/                  이벤트 수집 → DB (main.ts), 복구 명령 (reset.ts)
+api/                      조회 API (Express)
+db/                       테이블 생성 SQL (schema.sql), db:init
+tests/                    통합 테스트 (integration/), 테스트 도우미 (helpers/)
+docs/                     설계 문서
+docker-compose.yml        PostgreSQL
+package.json              db/·indexer/·api/·tests/가 같이 쓰는 루트 패키지
 README.md
 ```
 
@@ -189,6 +195,7 @@ README.md
 | DB 연결이 끊김 | 트랜잭션이 취소되어 반쯤 저장된 데이터가 없다. 책갈피도 그대로라 다시 연결되면 같은 블록부터 다시 처리한다 |
 | 블록체인 노드 연결이 끊김 | 잠시 기다렸다가 다시 시도한다 |
 | DB가 블록체인과 다르다고 의심됨 | Indexer를 멈추고 `npm run indexer:reset`으로 책갈피와 auctions·bids를 한 트랜잭션으로 비운 뒤 Indexer를 다시 켠다. 배포 블록부터 다시 읽어 사본을 새로 만들므로, 빠진 행뿐 아니라 잘못 저장된 행도 블록체인과 같아진다. 책갈피만 돌리면 이미 있는 행은 UNIQUE와 조건부 UPDATE 때문에 건너뛰어 잘못된 값이 남는다 |
+| 로컬 노드를 다시 켬 (체인이 처음부터 시작) | Indexer를 멈추고 `npm run deploy`로 다시 배포한 뒤, 출력된 CONTRACT_ADDRESS·DEPLOY_BLOCK으로 `.env`를 갱신하고 `npm run indexer:reset` 후 Indexer를 다시 켠다. 이전 체인의 데이터가 DB에 남고, 책갈피가 새 체인의 블록 번호보다 앞서 있어 그 아래의 새 이벤트를 건너뛰기 때문이다. 노드 재시작은 자동으로 감지하지 않는다 |
 
 ## 10. DB 테이블
 
