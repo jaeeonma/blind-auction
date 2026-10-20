@@ -98,8 +98,13 @@ export class Indexer {
   }
 
   /**
-   * Moves the bookmark back so everything is read again from deployBlock
-   * (design.md 9번 "DB가 블록체인과 다르다고 의심됨"). Duplicates are absorbed by the UNIQUE keys.
+   * Moves only the bookmark back, so the next sync reads every event again from deployBlock on top of
+   * the rows already saved. Tests use it to create the "same events read twice" situation
+   * (design.md 14번): the UNIQUE keys and guarded UPDATEs must keep exactly one copy.
+   *
+   * This is NOT the recovery for a wrong DB (design.md 9번 "DB가 블록체인과 다르다고 의심됨"):
+   * rows that already exist are skipped, so a wrong value would stay. That recovery is
+   * `npm run indexer:reset` (indexer/reset.ts), which empties auctions, bids and the bookmark.
    */
   async resetBookmark(): Promise<void> {
     await this.pool.query("DELETE FROM indexer_state");
