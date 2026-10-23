@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import express, { type ErrorRequestHandler, type Express } from "express";
 import type { Pool } from "pg";
 import {
@@ -12,6 +13,8 @@ import {
 
 // Read-only API over the DB copy (design.md 11번). Only GET routes exist: writes go from the
 // user's wallet straight to the contract (design.md 3번).
+
+const WEB_DIR = fileURLToPath(new URL("../web/", import.meta.url));
 
 class HttpError extends Error {
   constructor(
@@ -76,6 +79,10 @@ export function createApp(pool: Pool): Express {
     if (!r) throw notIndexedYet();
     res.json({ asOf: r.asOf, address, auctions: r.data });
   });
+
+  // Demo web screens (design.md 17번): plain files from web/, GET only. Mounted after the API routes,
+  // so it never shadows them; anything that is neither a route nor a file still gets the JSON 404.
+  app.use(express.static(WEB_DIR, { index: "index.html" }));
 
   app.use((_req, res) => {
     res.status(404).json({ error: "not found" });
