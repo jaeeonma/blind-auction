@@ -1,0 +1,123 @@
+// Participation panels (design.md 17번 B): what the selected account can do on the current page.
+// Only builds elements; the state comes from the chain (participate.js) and every button calls back.
+import { el } from "./dom.js";
+import { formatEth, statusLabel } from "./format.js";
+
+/**
+ * @typedef {{ commitment: string, deposit: bigint, revealed: boolean }} ChainBid
+ * @typedef {{
+ *   auctionId: bigint,
+ *   phase: string,
+ *   account: string,
+ *   bid: ChainBid | null,
+ *   saved: import("./secrets.js").SavedBid | null,
+ *   savedError: string,
+ *   storeAvailable: boolean,
+ * }} AuctionState
+ * @typedef {{
+ *   bid: (value: string, deposit: string) => void,
+ *   reveal: () => void,
+ * }} AuctionHandlers
+ */
+
+/** Note under the bid form: where the secret lives and what losing it means (design.md 4번 Q4, 17번). */
+const STORAGE_NOTE =
+  "입찰가와 secret은 서버가 아니라 이 브라우저에만 저장됩니다 (보내기 전에 저장). " +
+  "공개할 때도 같은 브라우저, 같은 주소(localhost와 127.0.0.1은 다른 저장소)로 접속해야 하고, " +
+  "브라우저 저장소를 지우면 공개할 수 없어 보증금이 몰수됩니다.";
+
+/**
+ * "내 참여" panel of an auction detail page.
+ * @param {AuctionState} s
+ * @param {AuctionHandlers} on
+ */
+export function auctionPanel(s, on) {
+  return el(
+    "section",
+    { class: "panel" },
+    el("h2", {}, `내 참여 · 경매 ${s.auctionId}번 `, el("span", { class: "muted" }, `(체인 기준: ${statusLabel(s.phase)})`)),
+    ...body(s, on),
+  );
+}
+
+/**
+ * @param {AuctionState} s
+ * @param {AuctionHandlers} on
+ * @returns {HTMLElement[]}
+ */
+function body(s, on) {
+  if (s.savedError) return [el("p", { class: "error" }, s.savedError)];
+  switch (s.phase) {
+    case "bidding":
+      return s.bid ? [bidSummary(s)] : [bidForm(s, on)];
+    case "revealing":
+      if (!s.bid) return [el("p", { class: "muted" }, "이 계정은 이 경매에 입찰하지 않았습니다.")];
+      if (s.bid.revealed) return [bidSummary(s)];
+      return [bidSummary(s), revealBox(s, on)];
+    case "awaiting_finalize":
+      return [s.bid ? bidSummary(s) : el("p", { class: "muted" }, "이 계정은 이 경매에 입찰하지 않았습니다."), el("p", {}, "공개 마감이 지났습니다. 누구나 경매를 종료할 수 있습니다.")];
+    default:
+      return [el("p", { class: "muted" }, "종료된 경매입니다. 돌려받을 돈과 판매 대금은 위 계정 줄의 장부에서 출금합니다.")];
+  }
+}
+
+/** @param {AuctionState} s */
+function bidSummary(s) {
+  const bid = /** @type {ChainBid} */ (s.bid);
+  return el(
+    "p",
+    {},
+    bid.revealed ? "공개한 입찰입니다. " : "입찰했습니다 (해시만 체인에 있음). ",
+    `보증금 ${formatEth(bid.deposit.toString())} · `,
+    s.saved
+      ? `이 브라우저에 저장된 입찰가 ${formatEth(s.saved.value)}`
+      : el("span", { class: "error" }, "이 브라우저에는 secret이 없습니다 (다른 브라우저나 스크립트로 입찰했다면 그쪽에서 공개하세요)"),
+  );
+}
+
+/**
+ * @param {AuctionState} s
+ * @param {AuctionHandlers} on
+ */
+function bidForm(s, on) {
+  const value = /** @type {HTMLInputElement} */ (el("input", { name: "value", type: "text", inputmode: "decimal", placeholder: "예: 5", required: "" }));
+  const deposit = /** @type {HTMLInputElement} */ (el("input", { name: "deposit", type: "text", inputmode: "decimal", placeholder: "예: 6", required: "" }));
+  const submit = el("button", { type: "submit" }, "입찰 (secret 저장 후 전송)");
+  if (!s.storeAvailable) submit.setAttribute("disabled", "");
+  const form = /** @type {HTMLFormElement} */ (
+    el(
+      "form",
+      { class: "action-form", autocomplete: "off" },
+      el("label", {}, "입찰가 (ETH) ", value),
+      el("label", {}, "보증금 (ETH) ", deposit),
+      submit,
+      el(
+        "p",
+        { class: "hint" },
+        "보증금을 입찰가보다 크게 넣으면 실제 입찰가를 숨길 수 있습니다. 보증금이 입찰가보다 적으면 공개 때 무효가 되고 보증금만 돌려받습니다. 지갑당 한 번만 입찰할 수 있습니다.",
+      ),
+      el("p", { class: "hint" }, s.storeAvailable ? STORAGE_NOTE : el("span", { class: "error" }, "이 브라우저는 저장소를 쓸 수 없어서 입찰할 수 없습니다 (secret을 저장할 곳이 없음).")),
+    )
+  );
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    on.bid(value.value, deposit.value);
+  });
+  return form;
+}
+
+/**
+ * @param {AuctionState} s
+ * @param {AuctionHandlers} on
+ */
+function revealBox(s, on) {
+  const button = el("button", { type: "button" }, "공개");
+  if (!s.saved) button.setAttribute("disabled", "");
+  button.addEventListener("click", () => on.reveal());
+  return el(
+    "div",
+    { class: "action-form" },
+    button,
+    el("p", { class: "hint" }, "저장된 입찰가와 secret을 체인의 해시와 먼저 맞춰 본 뒤 보냅니다. 공개 마감까지 공개하지 않으면 보증금은 몰수됩니다."),
+  );
+}

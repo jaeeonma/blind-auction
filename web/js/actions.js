@@ -1,7 +1,7 @@
 // Transactions of the participation screens (design.md 17번 B). Same checks and messages as the
 // scripts (contracts/scripts/lib, design.md 12번): what the contract would reject is refused before
 // sending, so the user sees why and pays no gas. The contract still enforces every rule.
-import { AbiCoder, hexlify, keccak256 } from "ethers";
+import { AbiCoder, hexlify, keccak256, parseEther } from "ethers";
 import { auctionInterface, findEvent, revertName } from "./chain.js";
 import { bidKey } from "./secrets.js";
 
@@ -178,4 +178,13 @@ export async function revealFromStore(chain, signer, store, auctionId) {
   const receipt = await (await auctionAs(chain, signer).getFunction("reveal")(auctionId, value, saved.secret)).wait();
   const event = findEvent(receipt, auctionInterface, "BidRevealed");
   return { value, valid: /** @type {boolean} */ (event.args.valid), blockNumber: /** @type {number} */ (receipt?.blockNumber) };
+}
+
+/**
+ * "3" | "0.5" ETH → wei. Same rule and message as the scripts (contracts/scripts/lib/units.ts).
+ * @param {string} input
+ */
+export function parseEthAmount(input) {
+  if (!/^\d+(\.\d{1,18})?$/.test(input.trim())) throw new Error(`알 수 없는 ETH 금액입니다 (예: 3, 0.5). 입력: "${input}"`);
+  return parseEther(input.trim());
 }

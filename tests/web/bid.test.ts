@@ -1,6 +1,6 @@
 import { Wallet } from "ethers";
 import { beforeEach, describe, expect, inject, it } from "vitest";
-import { computeCommitment, findBid, keyFor, placeBid, revealFromStore } from "../../web/js/actions.js";
+import { computeCommitment, findBid, keyFor, parseEthAmount, placeBid, revealFromStore } from "../../web/js/actions.js";
 import { connect, type Chain } from "../../web/js/chain.js";
 import { SecretStore, bidKey } from "../../web/js/secrets.js";
 import { auctionTimes, commitment, createAuction, deployContracts, eth, mineAt, type Chain as TestChain } from "../helpers/chain.js";
@@ -54,6 +54,13 @@ describe("web: bid and reveal with the browser's secret store", () => {
     store = new SecretStore(storage);
     auctionId = await createAuction(t);
     return () => c.provider.destroy();
+  });
+
+  it("reads ETH amounts like the scripts (0 is allowed, design.md 4번)", () => {
+    expect(parseEthAmount(" 0.5 ")).toBe(eth("0.5"));
+    expect(parseEthAmount("0")).toBe(0n);
+    expect(() => parseEthAmount("-1")).toThrow('알 수 없는 ETH 금액입니다 (예: 3, 0.5). 입력: "-1"');
+    expect(() => parseEthAmount("1e18")).toThrow("알 수 없는 ETH 금액입니다");
   });
 
   it("uses the same key as the scripts' secret file name", () => {

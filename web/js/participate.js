@@ -1,9 +1,11 @@
 // Participation UI (design.md 17번 B): the account bar, and running a transaction with feedback.
 // The transactions themselves are in actions.js; this file only wires them to the page.
 import { ChainSetupError, connect, rpcUrlFrom, testAccounts } from "./chain.js";
-import { pendingOf, withdrawAll } from "./actions.js";
+import { findBid, keyFor, parseEthAmount, pendingOf, phaseOf, placeBid, revealFromStore, withdrawAll } from "./actions.js";
 import { el, replace } from "./dom.js";
 import { formatEth, formatEthShort, shortAddress } from "./format.js";
+import { auctionPanel } from "./panels.js";
+import { browserStore } from "./secrets.js";
 
 const ACCOUNT_KEY = "blind-auction:account";
 /** Roles of the design.md 7번 example (and of `npm run demo`). */
@@ -16,11 +18,15 @@ export const localOnlyTag = () => el("span", { class: "local-only" }, "로컬 �
 
 export class Participation {
   /**
-   * @param {{ accountBox: HTMLElement, notice: HTMLElement, onTransaction: () => void }} parts
+   * @param {{ accountBox: HTMLElement, notice: HTMLElement, panel: HTMLElement, onTransaction: () => void }} parts
    */
   constructor(parts) {
     this.accountBox = parts.accountBox;
     this.notice = parts.notice;
+    this.panelBox = parts.panel;
+    /** What the panel shows now; it is redrawn only when this changes, so typed input survives refreshes. */
+    this.panelKey = "";
+    this.store = browserStore();
     this.onTransaction = parts.onTransaction;
     /** @type {Chain | null} */
     this.chain = null;
@@ -48,6 +54,89 @@ export class Participation {
       this.chain = null;
       replace(this.accountBox, el("span", { class: "muted" }, `참여 기능을 쓸 수 없습니다: ${errorMessage(err)}`));
     }
+  }
+
+  /**
+   * The panel of the current page (design.md 17번 B), from the chain's state for the selected account.
+   * Called with every refresh; does nothing when nothing changed.
+   * @param {{ name: string, id?: string }} route
+   */
+  async updatePanel(route) {
+    if (!this.chain || !this.account || route.name !== "auction" || route.id === undefined) {
+      this.setPanel("none");
+      return;
+    }
+    const chain = this.chain;
+    const auctionId = BigInt(route.id);
+    const account = this.account.address;
+    let phase;
+    try {
+      phase = await phaseOf(chain, auctionId);
+    } catch {
+      this.setPanel("none"); // unknown auction: the page itself says so
+      return;
+    }
+    const bid = await findBid(chain, auctionId, account);
+    let saved = null;
+    let savedError = "";
+    try {
+      saved = this.store?.load(keyFor(chain, auctionId, account)) ?? null;
+    } catch (err) {
+      savedError = errorMessage(err);
+    }
+    if (this.account.address !== account) return; // the account changed meanwhile; a newer call follows
+    const key = JSON.stringify([route.id, account, phase, bid?.commitment, bid?.revealed, saved?.secret, savedError]);
+    this.setPanel(key, () =>
+      auctionPanel(
+        { auctionId, phase, account, bid, saved, savedError, storeAvailable: this.store !== null },
+        {
+          bid: (value, deposit) => void this.bid(auctionId, value, deposit),
+          reveal: () => void this.reveal(auctionId),
+        },
+      ),
+    );
+  }
+
+  /**
+   * @param {string} key
+   * @param {() => HTMLElement} [build]
+   */
+  setPanel(key, build) {
+    if (key === this.panelKey) return;
+    this.panelKey = key;
+    if (build) replace(this.panelBox, build());
+    else replace(this.panelBox);
+  }
+
+  /**
+   * @param {bigint} auctionId
+   * @param {string} valueInput ETH
+   * @param {string} depositInput ETH
+   */
+  bid(auctionId, valueInput, depositInput) {
+    return this.run("입찰", async () => {
+      const value = parseEthAmount(valueInput);
+      const deposit = parseEthAmount(depositInput);
+      if (!this.store) throw new Error("이 브라우저는 저장소를 쓸 수 없어서 입찰할 수 없습니다");
+      const r = await placeBid(/** @type {Chain} */ (this.chain), await this.signer(), this.store, auctionId, value, deposit);
+      return {
+        blockNumber: r.blockNumber,
+        warnings: [...r.warnings, ...(r.replaced ? ["이전에 보내지 못한 입찰의 저장값을 새 secret으로 바꿨습니다."] : [])],
+        message: `경매 ${auctionId}번에 입찰했습니다. 입찰가와 secret은 이 브라우저에 저장했습니다. 보증금: ${formatEth(deposit.toString())}`,
+      };
+    });
+  }
+
+  /** @param {bigint} auctionId */
+  reveal(auctionId) {
+    return this.run("공개", async () => {
+      if (!this.store) throw new Error("이 브라우저는 저장소를 쓸 수 없습니다");
+      const r = await revealFromStore(/** @type {Chain} */ (this.chain), await this.signer(), this.store, auctionId);
+      return {
+        blockNumber: r.blockNumber,
+        message: `경매 ${auctionId}번 입찰을 공개했습니다: ${r.valid ? "유효" : "무효 (보증금 전액을 장부에 적음)"}, 입찰가 ${formatEth(r.value.toString())}`,
+      };
+    });
   }
 
   get account() {

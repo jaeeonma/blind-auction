@@ -16,6 +16,7 @@ const freshness = new FreshnessTracker();
 const participation = new Participation({
   accountBox: /** @type {HTMLElement} */ (document.getElementById("account")),
   notice: /** @type {HTMLElement} */ (document.getElementById("notice")),
+  panel: /** @type {HTMLElement} */ (document.getElementById("panel")),
   // After a transaction (or an account switch) redraw at once instead of waiting for the next block.
   onTransaction: () => {
     shownKey = "";
@@ -65,6 +66,7 @@ async function refresh() {
       shownKey = key;
     }
     if (newBlock) void participation.refreshAccount();
+    void participation.updatePanel(route);
     const waiting = participation.indexedUpTo(asOf.blockNumber);
     showStatus(
       freshness.isStale(now) ? "stale" : "ok",
