@@ -11,8 +11,11 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "types": ["node"],
-    "noEmit": true
+    "noEmit": true,
+    // web/ is plain browser JavaScript (no build step, design.md 17번); its JSDoc types are checked too.
+    "allowJs": true,
+    "checkJs": true
   },
-  "include": ["db/**/*.ts", "indexer/**/*.ts", "api/**/*.ts", "tests/**/*.ts", "vitest.config.ts"],
+  "include": ["db/**/*.ts", "indexer/**/*.ts", "api/**/*.ts", "tests/**/*.ts", "web/**/*.js", "vitest.config.ts"],
   "exclude": ["node_modules", "contracts"]
 }

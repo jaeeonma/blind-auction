@@ -2,8 +2,8 @@
 
 NFT를 ETH로 비공개 입찰하는 경매(Commit-Reveal). 입찰가는 해시로 숨겨 내고, 입찰 기간이 끝나면 각자 공개한다. NFT와 ETH의 교환은 스마트 컨트랙트가 보장하고, Indexer가 이벤트를 PostgreSQL에 모으며, REST API가 조회를 제공한다.
 
-- **동작하는 것:** 경매 생성 → 입찰 → 공개 → 낙찰·정산 → 출금 전체, 이벤트 수집(중단 후 재시작 시 누락·중복 없음), 조회 API, 사용자 스크립트
-- **테스트:** 컨트랙트 92개(커버리지 줄 100%), 통합 57개(실제 프로세스를 띄워 확인하는 시스템 테스트 포함)
+- **동작하는 것:** 경매 생성 → 입찰 → 공개 → 낙찰·정산 → 출금 전체, 이벤트 수집(중단 후 재시작 시 누락·중복 없음), 조회 API, 사용자 스크립트, 시연용 조회 화면
+- **테스트:** 컨트랙트 92개(커버리지 줄 100%), 통합 71개(실제 프로세스를 띄워 확인하는 시스템 테스트 포함)
 - **설계 문서:** [docs/design.md](docs/design.md). 이 README는 요약과 이유만 담고, 자세한 내용은 "design.md N번"으로 연결한다.
 
 ## 목차
@@ -48,6 +48,8 @@ npm run api
 # 5. design.md 7번 예시를 한 번에 실행하고 API로 확인
 cd contracts && npm run demo
 curl http://localhost:3000/auctions/0    # Windows PowerShell: curl.exe
+
+# 6. 조회 화면: 브라우저로 http://localhost:3000/ 을 연다 (3초마다 새로고침)
 ```
 
 **Windows PowerShell 5.1에서 실행할 때**
@@ -222,6 +224,7 @@ flowchart LR
   I -- "4. 이벤트 + 책갈피<br/>한 DB 트랜잭션" --> D
   A -- "5. 조회 (읽기 전용)" --> D
   S -. "6. GET /auctions/..." .-> A
+  W["웹 화면 (브라우저, 시연용)"] -. "7. 화면 조회 (3초마다)" .-> A
 ```
 
 | 구성 요소 | 하는 일 | 위치 |
@@ -230,7 +233,8 @@ flowchart LR
 | 사용자 스크립트 | 생성·입찰·공개·종료·출금 트랜잭션을 지갑에서 직접 보냄 | `contracts/tasks/`, `contracts/scripts/lib/` |
 | Indexer | 이벤트를 블록 범위로 읽어 DB에 저장. 책갈피로 이어 읽음 | `indexer/` |
 | PostgreSQL | 검색하기 쉽게 모은 사본. 테이블 정의는 한 곳 | `db/schema.sql` |
-| API | DB를 조회해 돌려줌. 쓰기 없음 | `api/` |
+| API | DB를 조회해 돌려줌. 쓰기 없음. 시연용 화면 파일도 제공 | `api/` |
+| 웹 화면 (시연용) | 경매 목록·상세·사용자별 참여 경매를 보여 줌. API를 3초마다 불러오고, Indexer가 멈추면 표시 (design.md 17번) | `web/` |
 
 **Indexer와 API를 따로 실행하는 이유:** Indexer가 멈추거나 재시작해도 API는 계속 조회에 답한다. `asOf`를 보면 데이터가 어느 블록 기준인지 알 수 있다.
 
@@ -251,7 +255,8 @@ flowchart LR
 ```
 contracts/   컨트랙트, 컨트랙트 테스트, 사용자 스크립트(tasks/, scripts/lib/)
 indexer/     이벤트 수집 → DB, 복구 명령(reset.ts)
-api/         조회 API (Express)
+api/         조회 API (Express), 화면 파일 제공
+web/         시연용 웹 화면 (HTML·CSS·JS, 빌드 없음)
 db/          테이블 생성 SQL, db:init
 tests/       통합 테스트 (Vitest + Supertest)
 docs/        설계 문서
@@ -262,7 +267,7 @@ docs/        설계 문서
 ```bash
 cd contracts && npx hardhat test       # 컨트랙트·스크립트 92개 (몇 초)
 cd contracts && npm run coverage       # 커버리지
-npm test                               # 통합 57개 (루트, 약 2분)
+npm test                               # 통합 71개 (루트, 약 2분)
 ```
 
 통합 테스트는 PostgreSQL이 떠 있어야 한다(`docker compose up -d`). Hardhat 노드는 테스트가 직접 8546 포트에 띄웠다가 끄므로 개발용 노드(8545)와 겹치지 않는다. 테스트마다 임시 스키마나 임시 데이터베이스를 만들어 쓰고 지워서 개발 데이터는 건드리지 않는다.
@@ -273,8 +278,9 @@ npm test                               # 통합 57개 (루트, 약 2분)
 | 사용자 스크립트 | 38 | secret 파일을 전송 전에 저장하는지, 보내기 전 확인, 손상된 파일, demo 반복 실행, 배포 기록의 주소 확인 |
 | DB 스키마 | 11 | 중복 방지, uint256 정확도, 주소·결과 칼럼 검사 |
 | Indexer | 13 | DB = 컨트랙트, 재시작, 같은 이벤트 두 번, DB·노드 오류 시 롤백, 시작 확인(설정 오류·노드 재시작) |
-| API | 27 | 상태 경계값(마감 −1초, 마감 정각), 필터, 오류 코드 |
+| API | 31 | 상태 경계값(마감 −1초, 마감 정각), 필터, 오류 코드, 화면 파일 제공(쓰기 거부, web/ 밖 접근 거부) |
 | 시스템 | 6 | 모든 구성 요소를 **실제 프로세스**로 띄워 확인 (아래). 6번째는 틀린 DEPLOY_BLOCK이면 Indexer가 스스로 멈추는지 |
+| 웹 화면 | 10 | 상태 이름, 남은 시간, 금액 표시, Indexer 멈춤 판단, 화면 경로. API 값을 HTML로 넣는 코드(innerHTML 등)가 없는지 |
 
 **시스템 테스트** (design.md 14번 통합 테스트). 스크립트로 트랜잭션을 보내고, Indexer·API 프로세스를 띄우거나 강제 종료하며 확인한다.
 
@@ -357,6 +363,7 @@ BlindAuction에서 빠진 분기 하나는 `finalize`의 재진입 잠금(`nonRe
 | | `feat/scripts-ko` | [#13](https://github.com/jaeeonma/blind-auction/pull/13) | 스크립트·demo 출력 한국어화 |
 | | `docs/final-check` | [#14](https://github.com/jaeeonma/blind-auction/pull/14) | Outline 요구사항 대응 표, 문서 보완 |
 | | `feat/startup-checks` | [#15](https://github.com/jaeeonma/blind-auction/pull/15) | 노드 재시작·설정 오류 안내 (스크립트 배포 주소 확인, Indexer 시작 확인) |
+| | `feat/web-view` | [#16](https://github.com/jaeeonma/blind-auction/pull/16) | 시연용 조회 화면 (design.md 17번 A) |
 
 **작업 규칙**
 - 커밋은 기능 하나가 테스트를 통과할 때마다 작게 나눈다. 메시지는 Conventional Commits + 한국어(`feat(contract): 입찰 기능 추가`). 6단계 전까지 `main`에 커밋 48개.

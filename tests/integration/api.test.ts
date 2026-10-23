@@ -305,4 +305,36 @@ describe("API (design.md 11번)", () => {
     await request(app).post("/auctions").send({}).expect(404);
     await request(app).delete("/auctions/0").expect(404);
   });
+
+  describe("demo web screens (design.md 17번)", () => {
+    it("serves the page, its script and its stylesheet from web/", async () => {
+      const page = await request(app).get("/").expect(200).expect("Content-Type", /text\/html/);
+      expect(page.text).toContain("<title>Blind Auction 시연</title>");
+      expect(page.text).toContain('<script type="module" src="/js/app.js">');
+      await request(app).get("/js/app.js").expect(200).expect("Content-Type", /javascript/);
+      await request(app).get("/css/style.css").expect(200).expect("Content-Type", /text\/css/);
+    });
+
+    it("does not change the API: routes answer JSON as before, files never shadow them", async () => {
+      await seedExample(0);
+      await setBlock(42, 5000);
+      const res = await request(app).get("/auctions").expect(200).expect("Content-Type", /json/);
+      expect(res.body.auctions.map((a: { auctionId: string }) => a.auctionId)).toEqual(["0"]);
+    });
+
+    it("stays read-only: writing to the page or to a file is refused", async () => {
+      await request(app).post("/").send({}).expect(404);
+      await request(app).put("/js/app.js").send("x").expect(404);
+      await request(app).delete("/index.html").expect(404);
+    });
+
+    it("does not serve files outside web/", async () => {
+      for (const p of ["/../package.json", "/..%2fpackage.json", "/%2e%2e/.env", "/../api/app.ts"]) {
+        const res = await request(app).get(p);
+        expect(res.status, p).toBeGreaterThanOrEqual(400);
+        expect(res.text).not.toContain("DATABASE_URL");
+        expect(res.text).not.toContain('"name": "blind-auction"');
+      }
+    });
+  });
 });
