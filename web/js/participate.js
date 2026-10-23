@@ -70,11 +70,11 @@ export class Participation {
         this.rpcWarning = el(
           "span",
           { class: "warn", title: rpc.rejected },
-          `?rpc= 주소를 쓰지 않고 기본 노드(${DEFAULT_RPC_URL})에 연결했습니다`,
+          `?rpc= 주소는 쓰지 않음 (기본 노드 ${DEFAULT_RPC_URL} 사용)`,
         );
         this.show(
           "error",
-          `화면 주소의 ?rpc=는 이 컴퓨터의 노드(${LOCAL_RPC_HOSTS.join(", ")})만 쓸 수 있어서 기본 노드(${DEFAULT_RPC_URL})에 연결했습니다. ` +
+          `화면 주소의 ?rpc=는 이 컴퓨터의 노드(${LOCAL_RPC_HOSTS.join(", ")})만 쓸 수 있어서, 받은 주소 대신 기본 노드(${DEFAULT_RPC_URL})를 씁니다. ` +
             `다른 노드는 입찰가와 secret을 받아 갈 수 있습니다. 받은 주소: ${rpc.rejected}`,
         );
       }
