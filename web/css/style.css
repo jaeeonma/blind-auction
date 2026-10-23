@@ -101,20 +101,6 @@ button {
   background: var(--bad);
 }
 
-.account-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 14px;
-  padding: 8px 24px;
-  background: #fffaf0;
-  border-bottom: 1px solid #f3dfb8;
-  font-size: 14px;
-}
-.account-bar select {
-  font: inherit;
-  padding: 3px 6px;
-}
 .local-only {
   padding: 1px 8px;
   border-radius: 4px;
@@ -154,42 +140,6 @@ button:disabled {
 .notice.error {
   background: #fdecec;
   color: #822727;
-}
-
-.panel-area {
-  max-width: 1100px;
-  margin: 12px auto 0;
-  padding: 0 24px;
-}
-.panel {
-  padding: 12px 16px;
-  border: 1px solid #f3dfb8;
-  border-radius: 8px;
-  background: #fffdf7;
-}
-.panel h2 {
-  margin: 0 0 8px;
-  font-size: 17px;
-}
-.panel p {
-  margin: 6px 0;
-}
-.action-form {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 14px;
-}
-.action-form input {
-  font: inherit;
-  width: 9em;
-  padding: 3px 6px;
-}
-.action-form .hint {
-  flex-basis: 100%;
-  margin: 0;
-  color: var(--muted);
-  font-size: 13px;
 }
 
 main {
@@ -266,7 +216,7 @@ section table {
 .error {
   color: var(--bad);
 }
-/* Inline warning inside the participation panels (the .error box is for whole-page errors). */
+/* Inline warning inside the 경매 진행 screen (the .error box is for whole-page errors). */
 .warn {
   color: var(--bad);
   font-weight: 600;

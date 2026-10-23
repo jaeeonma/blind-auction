@@ -6,8 +6,10 @@ import { ApiError, getAuction, listAuctions } from "./api.js";
 import { ROLES, cardFor, guide, loadStage } from "./demo.js";
 import { el, replace } from "./dom.js";
 import { formatEth, formatEthShort, shortAddress } from "./format.js";
-import { localOnlyTag } from "./panels.js";
 import { bidsTable, phaseSteps, resultBlock } from "./views.js";
+
+/** A small "only on a local test node" tag, next to the test accounts and the time button (design.md 17번). */
+const localOnlyTag = () => el("span", { class: "local-only" }, "로컬 테스트 노드 전용");
 
 /** @typedef {import("./participate.js").Participation} Participation */
 /** @typedef {import("./demo.js").Stage} Stage */
@@ -244,6 +246,7 @@ export class StageScreen {
    */
   async showBottom(s) {
     if (s.auctionId === null) {
+      this.bottom.box.hidden = true;
       this.bottom.show("none", () => []);
       return (await listAuctions("")).asOf;
     }
