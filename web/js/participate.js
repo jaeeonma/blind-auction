@@ -1,6 +1,6 @@
 // Participation UI (design.md 17번 B): the account bar, and running a transaction with feedback.
 // The transactions themselves are in actions.js; this file only wires them to the page.
-import { ChainSetupError, connect, rpcUrlFrom, testAccounts } from "./chain.js";
+import { ChainSetupError, DEFAULT_RPC_URL, LOCAL_RPC_HOSTS, connect, rpcUrlFrom, testAccounts } from "./chain.js";
 import {
   auctionEnds,
   createAuction,
@@ -54,6 +54,8 @@ export class Participation {
     this.busy = false;
     /** @type {HTMLElement | null} */
     this.infoBox = null;
+    /** Set when ?rpc= was refused; stays in the account bar. @type {HTMLElement | null} */
+    this.rpcWarning = null;
   }
 
   /** Connects to the node. Read-only screens keep working when this fails. */
@@ -62,13 +64,27 @@ export class Participation {
       const res = await fetch("/deployment.json", { cache: "no-store" });
       const body = await res.json();
       if (!res.ok) throw new ChainSetupError(body.error ?? "배포 기록을 읽지 못했습니다");
-      this.chain = await connect(rpcUrlFrom(location.search), body);
+      const rpc = rpcUrlFrom(location.search);
+      if (rpc.rejected !== null) {
+        // Shown before connecting, so it is there even when the default node is not running.
+        this.rpcWarning = el(
+          "span",
+          { class: "warn", title: rpc.rejected },
+          `?rpc= 주소를 쓰지 않고 기본 노드(${DEFAULT_RPC_URL})에 연결했습니다`,
+        );
+        this.show(
+          "error",
+          `화면 주소의 ?rpc=는 이 컴퓨터의 노드(${LOCAL_RPC_HOSTS.join(", ")})만 쓸 수 있어서 기본 노드(${DEFAULT_RPC_URL})에 연결했습니다. ` +
+            `다른 노드는 입찰가와 secret을 받아 갈 수 있습니다. 받은 주소: ${rpc.rejected}`,
+        );
+      }
+      this.chain = await connect(rpc.url, body);
       this.accounts = await testAccounts(this.chain.provider);
       if (!this.accounts[this.accountIndex]) this.accountIndex = 0;
       this.renderAccountBar();
     } catch (err) {
       this.chain = null;
-      replace(this.accountBox, el("span", { class: "muted" }, `참여 기능을 쓸 수 없습니다: ${errorMessage(err)}`));
+      replace(this.accountBox, el("span", { class: "muted" }, `참여 기능을 쓸 수 없습니다: ${errorMessage(err)}`), ...(this.rpcWarning ? [this.rpcWarning] : []));
     }
   }
 
@@ -266,7 +282,7 @@ export class Participation {
       this.onTransaction(); // panels depend on the account
     });
     this.infoBox = el("span", { class: "account-info" });
-    replace(this.accountBox, el("label", {}, "계정 ", select), localOnlyTag(), this.infoBox);
+    replace(this.accountBox, el("label", {}, "계정 ", select), localOnlyTag(), this.infoBox, ...(this.rpcWarning ? [this.rpcWarning] : []));
     void this.refreshAccount();
   }
 

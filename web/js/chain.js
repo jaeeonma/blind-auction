@@ -53,13 +53,33 @@ export const auctionInterface = new Interface(AUCTION_ABI);
 export const nftInterface = new Interface(NFT_ABI);
 
 /**
- * ?rpc=… from the page URL, or the default local node.
+ * Hosts ?rpc= may point to: only a node on this computer. The node tells the page the phase and the
+ * accounts, and a reveal sends value and secret to it, so a link with someone else's node could make
+ * the page reveal during the bidding period and hand that node the secrets (design.md 16·17번).
+ */
+export const LOCAL_RPC_HOSTS = ["localhost", "127.0.0.1", "[::1]"];
+
+/**
+ * ?rpc=… from the page URL when it is an http(s) address of a local node, otherwise the default
+ * local node. `rejected` is the refused value, so the page can say why it did not use it.
  * @param {string} search location.search
- * @returns {string}
+ * @returns {{ url: string, rejected: string | null }}
  */
 export function rpcUrlFrom(search) {
   const value = new URLSearchParams(search).get("rpc");
-  return value && /^https?:\/\/[^\s]+$/.test(value) ? value : DEFAULT_RPC_URL;
+  if (value === null || value === "") return { url: DEFAULT_RPC_URL, rejected: null };
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return { url: DEFAULT_RPC_URL, rejected: value };
+  }
+  const ok =
+    (parsed.protocol === "http:" || parsed.protocol === "https:") &&
+    LOCAL_RPC_HOSTS.includes(parsed.hostname) &&
+    parsed.username === "" &&
+    parsed.password === "";
+  return ok ? { url: parsed.href, rejected: null } : { url: DEFAULT_RPC_URL, rejected: value };
 }
 
 /**

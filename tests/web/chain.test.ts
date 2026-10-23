@@ -57,10 +57,32 @@ describe("web: chain connection", () => {
     }
   });
 
-  it("takes the node address from ?rpc= or uses the local default", () => {
-    expect(rpcUrlFrom("")).toBe(DEFAULT_RPC_URL);
-    expect(rpcUrlFrom("?rpc=http://127.0.0.1:8547")).toBe("http://127.0.0.1:8547");
-    expect(rpcUrlFrom("?rpc=javascript:alert(1)")).toBe(DEFAULT_RPC_URL);
+  it("takes the node address from ?rpc= only for a node on this computer", () => {
+    expect(rpcUrlFrom("")).toEqual({ url: DEFAULT_RPC_URL, rejected: null });
+    expect(rpcUrlFrom("?rpc=")).toEqual({ url: DEFAULT_RPC_URL, rejected: null });
+    for (const [given, used] of [
+      ["http://127.0.0.1:8547", "http://127.0.0.1:8547/"],
+      ["http://localhost:8547", "http://localhost:8547/"],
+      ["http://LOCALHOST:8547", "http://localhost:8547/"],
+      ["http://[::1]:8545", "http://[::1]:8545/"],
+      ["https://127.0.0.1:8545/rpc", "https://127.0.0.1:8545/rpc"],
+    ]) {
+      expect(rpcUrlFrom(`?rpc=${encodeURIComponent(given!)}`), given).toEqual({ url: used, rejected: null });
+    }
+    // Someone else's node could lie about the phase and receive the secrets of a reveal (design.md 16번).
+    for (const given of [
+      "http://evil.example:8545",
+      "https://203.0.113.5:8545",
+      "http://localhost.evil.example:8545",
+      "http://127.0.0.1.nip.io:8545",
+      "http://192.168.0.10:8545",
+      "http://user:pw@127.0.0.1:8545",
+      "ws://127.0.0.1:8545",
+      "javascript:alert(1)",
+      "127.0.0.1:8545",
+    ]) {
+      expect(rpcUrlFrom(`?rpc=${encodeURIComponent(given)}`), given).toEqual({ url: DEFAULT_RPC_URL, rejected: given });
+    }
   });
 
   it("connects when the deployment record matches the node", async () => {
