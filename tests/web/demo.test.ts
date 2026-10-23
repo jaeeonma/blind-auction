@@ -78,13 +78,17 @@ describe("web: 경매 진행 화면 (pure)", () => {
   });
 
   it("bidding: a bid button, off with the reason when the wallet already bid or nothing can be saved", () => {
-    expect(cardFor(person(1), stage("bidding"))).toEqual({ status: "", action: { kind: "bid", label: "입찰", reason: "" } });
+    expect(cardFor(person(1), stage("bidding"))).toEqual({ status: "", action: { kind: "bid", label: "입찰", reason: "" }, withdraw: null });
     expect(cardFor(person(1, { bid: bidOf("5") }), stage("bidding")).action?.reason).toBe("이미 입찰했습니다 (지갑당 한 번)");
     expect(cardFor(person(1), stage("bidding", undefined, false)).action?.reason).toBe(
       "브라우저 저장소를 쓸 수 없어 secret을 저장할 곳이 없습니다",
     );
     // The seller does not bid in the example: no button, a status line instead.
-    expect(cardFor(person(0), stage("bidding"))).toEqual({ status: "입찰을 기다리는 중 (이 예시에서 판매자는 입찰하지 않음)", action: null });
+    expect(cardFor(person(0), stage("bidding"))).toEqual({
+      status: "입찰을 기다리는 중 (이 예시에서 판매자는 입찰하지 않음)",
+      action: null,
+      withdraw: null,
+    });
   });
 
   it("revealing: a reveal button, off with the reason", () => {
@@ -108,6 +112,26 @@ describe("web: 경매 진행 화면 (pure)", () => {
     expect(cardFor(person(4, { bid: bidOf("3") }), stage("awaiting_finalize")).status).toBe("공개하지 않음 · 보증금 3 ETH는 종료하면 판매자에게 몰수");
     expect(cardFor(person(4, { bid: bidOf("3") }), stage("finalized")).status).toBe("공개하지 않아 보증금 3 ETH 몰수");
     expect(cardFor(person(1, { bid: bidOf("5", true) }), stage("finalized")).status).toBe("공개함 · 보증금 5 ETH");
+  });
+
+  it("shows 출금 in every phase while the ledger has money (withdraw is allowed any time, design.md 6번)", () => {
+    const withdraw = { kind: "withdraw", label: "출금", reason: "" };
+    // Money left from an earlier auction: 출금 sits next to the phase's own button, or alone.
+    for (const phase of ["none", "bidding", "revealing", "awaiting_finalize"]) {
+      for (const i of [0, 1]) {
+        const card = cardFor(person(i, { pending: eth("7") }), stage(phase));
+        expect(card.withdraw, `${phase}, card ${i}`).toEqual(withdraw);
+      }
+    }
+    // The phase's button stays as it was.
+    expect(cardFor(person(1, { pending: eth("2") }), stage("bidding")).action).toEqual({ kind: "bid", label: "입찰", reason: "" });
+    expect(cardFor(person(0, { pending: eth("2") }), stage("bidding")).action).toBeNull();
+    // Finalized: 출금 is the phase's button itself, not a second one.
+    expect(cardFor(person(1, { pending: eth("5") }), stage("finalized"))).toMatchObject({ action: withdraw, withdraw: null });
+    // An empty ledger adds nothing before the end (the finalized 출금 says why it is off, as before).
+    for (const phase of ["none", "bidding", "revealing", "awaiting_finalize", "finalized"]) {
+      expect(cardFor(person(1), stage(phase)).withdraw, phase).toBeNull();
+    }
   });
 });
 
@@ -173,5 +197,29 @@ describe("web: 경매 진행 화면 on the test node", () => {
     expect(cardFor(s.people[2]!, s).action?.reason).toBe("장부에 받을 돈이 없습니다");
     await withdrawAll(c, await signer(0));
     expect((await loadStage(c, store, addresses)).people[0]!.pending).toBe(0n);
+  });
+
+  it("after 새 경매 시작 without withdrawing, the ledger from the earlier auction can still be paid out", async () => {
+    const signer = (i: number) => c.provider.getSigner(i);
+    const first = await startAuction(c, await signer(0));
+    await placeBid(c, await signer(1), store, first.auctionId, eth("3"), eth("5"));
+    await moveTimeTo(c, first.biddingEnd);
+    await revealFromStore(c, await signer(1), store, first.auctionId);
+    await moveTimeTo(c, first.revealEnd);
+    await finalizeAuction(c, await signer(1), first.auctionId);
+
+    // Nobody withdrew; the next auction starts and is in its bidding phase.
+    await startAuction(c, await signer(0));
+    const s = await loadStage(c, store, addresses);
+    expect(s.phase).toBe("bidding");
+    expect(s.people.map((p) => p.pending)).toEqual([eth("3"), eth("2"), 0n, 0n, 0n]);
+    expect(cardFor(s.people[0]!, s)).toMatchObject({ action: null, withdraw: { kind: "withdraw", reason: "" } });
+    expect(cardFor(s.people[1]!, s)).toMatchObject({ action: { kind: "bid", reason: "" }, withdraw: { kind: "withdraw", reason: "" } });
+    expect(cardFor(s.people[2]!, s).withdraw).toBeNull();
+
+    await withdrawAll(c, await signer(0));
+    await withdrawAll(c, await signer(1));
+    const after = await loadStage(c, store, addresses);
+    expect(after.people.every((p) => p.pending === 0n && cardFor(p, after).withdraw === null)).toBe(true);
   });
 });

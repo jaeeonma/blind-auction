@@ -53,10 +53,11 @@ export class StageScreen {
   constructor(p) {
     this.p = p;
     this.top = new Part(el("section", { class: "stage-top" }));
-    /** One card per demo account; each has a line that may change freely and an action part. */
+    /** One card per demo account: a line that may change freely, the phase's action, and 출금. */
     this.cards = ROLES.map((role) => {
       const info = new Part(el("div", { class: "card-info" }));
       const action = new Part(el("div", { class: "card-action" }));
+      const withdraw = new Part(el("div", { class: "card-withdraw" }));
       const box = el(
         "section",
         { class: "card" },
@@ -64,8 +65,9 @@ export class StageScreen {
         info.box,
         role.note ? el("p", { class: "hint" }, role.note) : null,
         action.box,
+        withdraw.box,
       );
-      return { role, box, info, action };
+      return { role, box, info, action, withdraw };
     });
     this.tools = new Part(el("p", { class: "stage-tools" }));
     this.bottom = new Part(el("section", { class: "stage-bottom" }));
@@ -162,7 +164,7 @@ export class StageScreen {
   }
 
   /**
-   * @param {{ role: import("./demo.js").Role, info: Part, action: Part }} card
+   * @param {{ role: import("./demo.js").Role, info: Part, action: Part, withdraw: Part }} card
    * @param {Stage} s
    */
   showCard(card, s) {
@@ -173,7 +175,7 @@ export class StageScreen {
       el("p", {}, "장부 ", el("strong", {}, formatEth(person.pending.toString()))),
     ]);
 
-    const { status, action } = cardFor(person, s);
+    const { status, action, withdraw } = cardFor(person, s);
     const auctionId = /** @type {bigint} */ (s.auctionId);
     const index = card.role.index;
     card.action.show(JSON.stringify([s.auctionId?.toString(), s.phase, status, action]), () => {
@@ -193,6 +195,11 @@ export class StageScreen {
       nodes.push(actionButton(action.label, action.reason, run));
       return nodes;
     });
+    // 출금 next to the phase's button whenever the ledger has money (design.md 6번: any time). A part of
+    // its own, so it appearing or going away never redraws the bid form being typed in.
+    card.withdraw.show(JSON.stringify(withdraw), () =>
+      withdraw ? [actionButton(withdraw.label, withdraw.reason, () => void this.p.withdraw(index))] : [],
+    );
   }
 
   /**

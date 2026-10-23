@@ -449,3 +449,6 @@ button.primary {
   background: var(--good);
   border-color: var(--good);
 }
+.card-withdraw:not(:empty) {
+  padding-top: 6px;
+}
