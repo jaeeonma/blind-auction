@@ -123,12 +123,28 @@ export function guide(s) {
  */
 
 /**
- * The status line and the one button of a card, for the current phase (design.md 17번 B).
+ * The status line and the buttons of a card (design.md 17번 B): the button of the current phase, and
+ * 출금 whenever the ledger has money. The contract allows withdraw at any time (design.md 6번), so
+ * money left from an earlier auction can still be taken out after a new auction started.
+ * @param {Person} p
+ * @param {Stage} s
+ * @returns {{ status: string, action: CardAction | null, withdraw: CardAction | null }}
+ *   withdraw: an extra 출금 next to `action`; null when `action` is 출금 itself or the ledger is empty
+ */
+export function cardFor(p, s) {
+  const card = phaseCard(p, s);
+  const withdraw =
+    card.action?.kind !== "withdraw" && p.pending > 0n ? { kind: /** @type {const} */ ("withdraw"), label: "출금", reason: "" } : null;
+  return { ...card, withdraw };
+}
+
+/**
+ * The status line and the button of the current phase.
  * @param {Person} p
  * @param {Stage} s
  * @returns {{ status: string, action: CardAction | null }}
  */
-export function cardFor(p, s) {
+function phaseCard(p, s) {
   const withdraw = () => ({
     kind: /** @type {const} */ ("withdraw"),
     label: "출금",
