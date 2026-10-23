@@ -356,7 +356,7 @@ BlindAuction에서 빠진 분기 하나는 `finalize`의 재진입 잠금(`nonRe
 | | `docs/readme-clone` | [#12](https://github.com/jaeeonma/blind-auction/pull/12) | 빠른 시작에 저장소 받는 명령 |
 | | `feat/scripts-ko` | [#13](https://github.com/jaeeonma/blind-auction/pull/13) | 스크립트·demo 출력 한국어화 |
 | | `docs/final-check` | [#14](https://github.com/jaeeonma/blind-auction/pull/14) | Outline 요구사항 대응 표, 문서 보완 |
-| | `feat/startup-checks` | PR_NUMBER_TBD | 노드 재시작·설정 오류 안내 (스크립트 배포 주소 확인, Indexer 시작 확인) |
+| | `feat/startup-checks` | [#15](https://github.com/jaeeonma/blind-auction/pull/15) | 노드 재시작·설정 오류 안내 (스크립트 배포 주소 확인, Indexer 시작 확인) |
 
 **작업 규칙**
 - 커밋은 기능 하나가 테스트를 통과할 때마다 작게 나눈다. 메시지는 Conventional Commits + 한국어(`feat(contract): 입찰 기능 추가`). 6단계 전까지 `main`에 커밋 48개.
