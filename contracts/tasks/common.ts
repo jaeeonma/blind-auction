@@ -2,7 +2,7 @@ import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signer
 import { HardhatPluginError } from "hardhat/plugins";
 import type { ActionType, HardhatRuntimeEnvironment, TaskArguments } from "hardhat/types";
 import type { BlindAuction, MockNFT } from "../typechain-types";
-import { loadDeployment, type Deployment } from "../scripts/lib/deployments";
+import { deploymentPath, loadDeployment, type Deployment } from "../scripts/lib/deployments";
 
 /**
  * Task action wrapper. Hardhat prints a plain Error as "An unexpected error occurred" with a stack
@@ -46,9 +46,25 @@ export interface Contracts {
   nft: MockNFT;
 }
 
-/** 배포 기록에서 주소를 읽어 signer로 연결한 컨트랙트를 돌려준다. */
+/**
+ * 배포 기록에서 주소를 읽어 signer로 연결한 컨트랙트를 돌려준다.
+ * 노드를 다시 켜면 체인은 처음부터 시작하지만 배포 기록은 남는다. 그 주소에는 코드가 없어서
+ * 조회 결과가 "0x"로 오고, 그대로 두면 "could not decode result data"처럼 원인을 알기 어려운
+ * 오류가 난다. 그래서 먼저 코드가 있는지 확인하고 할 일을 알려 준다 (design.md 12번).
+ */
 export async function loadContracts(hre: HardhatRuntimeEnvironment, signer: HardhatEthersSigner): Promise<Contracts> {
   const deployment = loadDeployment(hre.network.name);
+  for (const [name, address] of [
+    ["BlindAuction", deployment.blindAuction],
+    ["MockNFT", deployment.mockNft],
+  ] as const) {
+    if ((await hre.ethers.provider.getCode(address)) === "0x") {
+      throw new Error(
+        `배포 기록의 ${name} 주소에 컨트랙트가 없습니다. 노드를 다시 켰다면 "npm run deploy"를 먼저 실행하세요. ` +
+          `주소: ${address}, 배포 기록: ${deploymentPath(hre.network.name)}`,
+      );
+    }
+  }
   const [auction, nft] = await Promise.all([
     hre.ethers.getContractAt("BlindAuction", deployment.blindAuction, signer),
     hre.ethers.getContractAt("MockNFT", deployment.mockNft, signer),
