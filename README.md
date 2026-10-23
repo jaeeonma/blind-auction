@@ -3,7 +3,7 @@
 NFT를 ETH로 비공개 입찰하는 경매(Commit-Reveal). 입찰가는 해시로 숨겨 내고, 입찰 기간이 끝나면 각자 공개한다. NFT와 ETH의 교환은 스마트 컨트랙트가 보장하고, Indexer가 이벤트를 PostgreSQL에 모으며, REST API가 조회를 제공한다.
 
 - **동작하는 것:** 경매 생성 → 입찰 → 공개 → 낙찰·정산 → 출금 전체, 이벤트 수집(중단 후 재시작 시 누락·중복 없음), 조회 API, 사용자 스크립트
-- **테스트:** 컨트랙트 89개(커버리지 줄 100%), 통합 49개(실제 프로세스를 띄워 확인하는 시스템 테스트 포함)
+- **테스트:** 컨트랙트 92개(커버리지 줄 100%), 통합 57개(실제 프로세스를 띄워 확인하는 시스템 테스트 포함)
 - **설계 문서:** [docs/design.md](docs/design.md). 이 README는 요약과 이유만 담고, 자세한 내용은 "design.md N번"으로 연결한다.
 
 ## 목차
@@ -260,9 +260,9 @@ docs/        설계 문서
 ## 4. 테스트
 
 ```bash
-cd contracts && npx hardhat test       # 컨트랙트·스크립트 89개 (몇 초)
+cd contracts && npx hardhat test       # 컨트랙트·스크립트 92개 (몇 초)
 cd contracts && npm run coverage       # 커버리지
-npm test                               # 통합 49개 (루트, 약 1분 30초)
+npm test                               # 통합 57개 (루트, 약 2분)
 ```
 
 통합 테스트는 PostgreSQL이 떠 있어야 한다(`docker compose up -d`). Hardhat 노드는 테스트가 직접 8546 포트에 띄웠다가 끄므로 개발용 노드(8545)와 겹치지 않는다. 테스트마다 임시 스키마나 임시 데이터베이스를 만들어 쓰고 지워서 개발 데이터는 건드리지 않는다.
@@ -270,11 +270,11 @@ npm test                               # 통합 49개 (루트, 약 1분 30초)
 | 범위 | 개수 | 확인하는 것 |
 |---|---|---|
 | 컨트랙트 함수 | 54 | 생성·입찰·공개·종료·출금의 규칙, 실패해야 하는 경우, 재진입 공격, 7번 예시 전체 흐름 |
-| 사용자 스크립트 | 35 | secret 파일을 전송 전에 저장하는지, 보내기 전 확인, 손상된 파일, demo 반복 실행 |
+| 사용자 스크립트 | 38 | secret 파일을 전송 전에 저장하는지, 보내기 전 확인, 손상된 파일, demo 반복 실행, 배포 기록의 주소 확인 |
 | DB 스키마 | 11 | 중복 방지, uint256 정확도, 주소·결과 칼럼 검사 |
-| Indexer | 6 | DB = 컨트랙트, 재시작, 같은 이벤트 두 번, DB·노드 오류 시 롤백 |
+| Indexer | 13 | DB = 컨트랙트, 재시작, 같은 이벤트 두 번, DB·노드 오류 시 롤백, 시작 확인(설정 오류·노드 재시작) |
 | API | 27 | 상태 경계값(마감 −1초, 마감 정각), 필터, 오류 코드 |
-| 시스템 | 5 | 모든 구성 요소를 **실제 프로세스**로 띄워 확인 (아래) |
+| 시스템 | 6 | 모든 구성 요소를 **실제 프로세스**로 띄워 확인 (아래). 6번째는 틀린 DEPLOY_BLOCK이면 Indexer가 스스로 멈추는지 |
 
 **시스템 테스트** (design.md 14번 통합 테스트). 스크립트로 트랜잭션을 보내고, Indexer·API 프로세스를 띄우거나 강제 종료하며 확인한다.
 
@@ -355,6 +355,8 @@ BlindAuction에서 빠진 분기 하나는 `finalize`의 재진입 잠금(`nonRe
 | | `docs/readme-windows` | [#11](https://github.com/jaeeonma/blind-auction/pull/11) | Windows PowerShell 안내, 두 번째 실행 절차 |
 | | `docs/readme-clone` | [#12](https://github.com/jaeeonma/blind-auction/pull/12) | 빠른 시작에 저장소 받는 명령 |
 | | `feat/scripts-ko` | [#13](https://github.com/jaeeonma/blind-auction/pull/13) | 스크립트·demo 출력 한국어화 |
+| | `docs/final-check` | [#14](https://github.com/jaeeonma/blind-auction/pull/14) | Outline 요구사항 대응 표, 문서 보완 |
+| | `feat/startup-checks` | PR_NUMBER_TBD | 노드 재시작·설정 오류 안내 (스크립트 배포 주소 확인, Indexer 시작 확인) |
 
 **작업 규칙**
 - 커밋은 기능 하나가 테스트를 통과할 때마다 작게 나눈다. 메시지는 Conventional Commits + 한국어(`feat(contract): 입찰 기능 추가`). 6단계 전까지 `main`에 커밋 48개.
