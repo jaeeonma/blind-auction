@@ -312,3 +312,40 @@ export async function finalizeAuction(chain, signer, auctionId) {
     blockNumber: /** @type {number} */ (receipt?.blockNumber),
   };
 }
+
+// ── demo time (local Hardhat node only) ─────────────────────────────
+
+/**
+ * Block time of the latest block (unix seconds).
+ * @param {Chain} chain
+ */
+export async function latestBlockTime(chain) {
+  const block = await chain.provider.getBlock("latest");
+  if (!block) throw new Error("최신 블록을 읽지 못했습니다");
+  return BigInt(block.timestamp);
+}
+
+/**
+ * 시간 앞당기기 (design.md 12·17번): mines a block exactly at `target`, so the next phase starts at once.
+ * Uses Hardhat-only RPC methods (evm_*), same as the time-travel script. Time never goes backwards:
+ * if the chain is already at or past `target`, nothing is sent.
+ * @param {Chain} chain
+ * @param {bigint} target unix seconds
+ */
+export async function moveTimeTo(chain, target) {
+  const now = await latestBlockTime(chain);
+  if (now >= target) return { moved: false, time: now, blockNumber: await chain.provider.getBlockNumber() };
+  await chain.provider.send("evm_setNextBlockTimestamp", [Number(target)]);
+  await chain.provider.send("evm_mine", []);
+  return { moved: true, time: await latestBlockTime(chain), blockNumber: await chain.provider.getBlockNumber() };
+}
+
+/**
+ * The two ends of an auction, for the time buttons.
+ * @param {Chain} chain
+ * @param {bigint} auctionId
+ */
+export async function auctionEnds(chain, auctionId) {
+  const a = await chain.auction.getFunction("getAuction")(auctionId);
+  return { biddingEnd: /** @type {bigint} */ (a.biddingEnd), revealEnd: /** @type {bigint} */ (a.revealEnd) };
+}

@@ -2,11 +2,13 @@
 // The transactions themselves are in actions.js; this file only wires them to the page.
 import { ChainSetupError, connect, rpcUrlFrom, testAccounts } from "./chain.js";
 import {
+  auctionEnds,
   createAuction,
   finalizeAuction,
   findBid,
   keyFor,
   mintNft,
+  moveTimeTo,
   ownedTokens,
   parseDuration,
   parseEthAmount,
@@ -18,7 +20,7 @@ import {
 } from "./actions.js";
 import { el, replace } from "./dom.js";
 import { formatEth, formatEthShort, formatTime, shortAddress } from "./format.js";
-import { auctionPanel, createPanel } from "./panels.js";
+import { auctionPanel, createPanel, localOnlyTag } from "./panels.js";
 import { browserStore } from "./secrets.js";
 
 const ACCOUNT_KEY = "blind-auction:account";
@@ -26,9 +28,6 @@ const ACCOUNT_KEY = "blind-auction:account";
 export const ROLE_HINT = /** @type {Record<number, string>} */ ({ 0: "판매자", 1: "A", 2: "B", 3: "C", 4: "D" });
 
 /** @typedef {import("./chain.js").Chain} Chain */
-
-/** A small "only on a local test node" tag, shown next to the test accounts and the time tools. */
-export const localOnlyTag = () => el("span", { class: "local-only" }, "로컬 테스트 노드 전용");
 
 export class Participation {
   /**
@@ -108,6 +107,7 @@ export class Participation {
           bid: (value, deposit) => void this.bid(auctionId, value, deposit),
           reveal: () => void this.reveal(auctionId),
           finalize: () => void this.finalize(auctionId),
+          moveTime: (to) => void this.moveTime(auctionId, to),
         },
       ),
     );
@@ -159,6 +159,25 @@ export class Participation {
         message:
           `경매 ${r.auctionId}번을 만들었습니다${r.approved ? " (승인 후 생성)" : ""}. ` +
           `입찰 마감 ${formatTime(Number(r.biddingEnd))}, 공개 마감 ${formatTime(Number(r.revealEnd))}`,
+      };
+    });
+  }
+
+  /**
+   * @param {bigint} auctionId
+   * @param {"reveal" | "end"} to
+   */
+  moveTime(auctionId, to) {
+    return this.run("시간 앞당기기", async () => {
+      const chain = /** @type {Chain} */ (this.chain);
+      const ends = await auctionEnds(chain, auctionId);
+      const r = await moveTimeTo(chain, to === "reveal" ? ends.biddingEnd : ends.revealEnd);
+      const where = to === "reveal" ? "입찰 마감" : "공개 마감";
+      return {
+        blockNumber: r.blockNumber,
+        message: r.moved
+          ? `블록 시간을 경매 ${auctionId}번의 ${where}으로 옮겼습니다: ${formatTime(Number(r.time))}`
+          : `이미 경매 ${auctionId}번의 ${where}이 지났습니다. 지금 블록 시간: ${formatTime(Number(r.time))}`,
       };
     });
   }
@@ -270,7 +289,25 @@ export class Participation {
       el("strong", {}, formatEth(pending.toString())),
       " ",
       withdraw,
+      this.exportBox(),
     );
+  }
+
+  /** "저장된 입찰 N건 [내보내기]": a backup of the browser's secrets (design.md 17번). */
+  exportBox() {
+    if (!this.store) return el("span", { class: "error" }, " · 브라우저 저장소를 쓸 수 없음");
+    const count = this.store.list().length;
+    const button = el("button", { type: "button", class: "small" }, "내보내기 (JSON)");
+    if (count === 0) button.setAttribute("disabled", "");
+    button.addEventListener("click", () => {
+      const store = /** @type {import("./secrets.js").SecretStore} */ (this.store);
+      const url = URL.createObjectURL(new Blob([store.exportJson()], { type: "application/json" }));
+      const a = el("a", { href: url, download: `blind-auction-bids-${new Date().toISOString().slice(0, 10)}.json` });
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      this.show("ok", `저장된 입찰 ${count}건을 내보냈습니다. 파일에는 secret이 들어 있으니 다른 사람과 공유하지 마세요.`);
+    });
+    return el("span", { class: "saved-bids", title: "입찰가와 secret은 이 브라우저에만 있습니다. 저장소를 지우기 전에 내보내 두세요." }, ` · 이 브라우저에 저장된 입찰 ${count}건 `, button);
   }
 
   /**

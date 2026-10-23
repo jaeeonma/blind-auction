@@ -18,12 +18,16 @@ import { formatEth, statusLabel } from "./format.js";
  *   bid: (value: string, deposit: string) => void,
  *   reveal: () => void,
  *   finalize: () => void,
+ *   moveTime: (to: "reveal" | "end") => void,
  * }} AuctionHandlers
  * @typedef {{
  *   mint: () => void,
  *   create: (tokenId: string, bidding: string, reveal: string) => void,
  * }} CreateHandlers
  */
+
+/** A small "only on a local test node" tag, shown next to the test accounts and the time tools. */
+export const localOnlyTag = () => el("span", { class: "local-only" }, "로컬 테스트 노드 전용");
 
 /** Note under the bid form: where the secret lives and what losing it means (design.md 4번 Q4, 17번). */
 const STORAGE_NOTE =
@@ -42,6 +46,7 @@ export function auctionPanel(s, on) {
     { class: "panel" },
     el("h2", {}, `내 참여 · 경매 ${s.auctionId}번 `, el("span", { class: "muted" }, `(체인 기준: ${statusLabel(s.phase)})`)),
     ...body(s, on),
+    timeTools(s, on),
   );
 }
 
@@ -181,4 +186,26 @@ export function createPanel(s, on) {
     on.create(token.value, bidding.value, reveal.value);
   });
   return el("section", { class: "panel" }, el("h2", {}, "새 경매 만들기 ", mint), form);
+}
+
+/**
+ * 시간 앞당기기 (design.md 12·17번): jump the node's block time to the end of the current phase.
+ * @param {AuctionState} s
+ * @param {AuctionHandlers} on
+ */
+function timeTools(s, on) {
+  /** @type {Record<string, ["reveal" | "end", string]>} */
+  const jumps = { bidding: ["reveal", "입찰 마감으로 (공개 시작)"], revealing: ["end", "공개 마감으로 (종료 가능)"] };
+  const jump = jumps[s.phase];
+  if (!jump) return null;
+  const button = el("button", { type: "button", class: "small" }, jump[1]);
+  button.addEventListener("click", () => on.moveTime(jump[0]));
+  return el(
+    "div",
+    { class: "action-form time-tools" },
+    el("span", {}, "시간 앞당기기"),
+    button,
+    localOnlyTag(),
+    el("p", { class: "hint" }, "노드의 블록 시간을 이 경매의 마감 시각으로 옮겨 블록을 하나 만듭니다. 시간은 되돌릴 수 없고, 같은 노드의 다른 경매 시간도 함께 지나갑니다."),
+  );
 }
