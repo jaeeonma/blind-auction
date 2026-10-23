@@ -56,7 +56,7 @@ export function auctionPanel(s, on) {
  * @returns {HTMLElement[]}
  */
 function body(s, on) {
-  if (s.savedError) return [el("p", { class: "error" }, s.savedError)];
+  if (s.savedError) return [el("p", { class: "warn" }, s.savedError)];
   switch (s.phase) {
     case "bidding":
       return s.bid ? [bidSummary(s)] : [bidForm(s, on)];
@@ -81,7 +81,7 @@ function bidSummary(s) {
     `보증금 ${formatEth(bid.deposit.toString())} · `,
     s.saved
       ? `이 브라우저에 저장된 입찰가 ${formatEth(s.saved.value)}`
-      : el("span", { class: "error" }, "이 브라우저에는 secret이 없습니다 (다른 브라우저나 스크립트로 입찰했다면 그쪽에서 공개하세요)"),
+      : el("span", { class: "warn" }, "이 브라우저에는 secret이 없습니다 (다른 브라우저나 스크립트로 입찰했다면 그쪽에서 공개하세요)"),
   );
 }
 
@@ -106,7 +106,7 @@ function bidForm(s, on) {
         { class: "hint" },
         "보증금을 입찰가보다 크게 넣으면 실제 입찰가를 숨길 수 있습니다. 보증금이 입찰가보다 적으면 공개 때 무효가 되고 보증금만 돌려받습니다. 지갑당 한 번만 입찰할 수 있습니다.",
       ),
-      el("p", { class: "hint" }, s.storeAvailable ? STORAGE_NOTE : el("span", { class: "error" }, "이 브라우저는 저장소를 쓸 수 없어서 입찰할 수 없습니다 (secret을 저장할 곳이 없음).")),
+      el("p", { class: "hint" }, s.storeAvailable ? STORAGE_NOTE : el("span", { class: "warn" }, "이 브라우저는 저장소를 쓸 수 없어서 입찰할 수 없습니다 (secret을 저장할 곳이 없음).")),
     )
   );
   form.addEventListener("submit", (event) => {

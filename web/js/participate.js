@@ -296,7 +296,7 @@ export class Participation {
 
   /** "저장된 입찰 N건 [내보내기]": a backup of the browser's secrets (design.md 17번). */
   exportBox() {
-    if (!this.store) return el("span", { class: "error" }, " · 브라우저 저장소를 쓸 수 없음");
+    if (!this.store) return el("span", { class: "warn" }, " · 브라우저 저장소를 쓸 수 없음");
     const count = this.store.list().length;
     const button = el("button", { type: "button", class: "small" }, "내보내기 (JSON)");
     if (count === 0) button.setAttribute("disabled", "");

@@ -266,6 +266,11 @@ section table {
 .error {
   color: var(--bad);
 }
+/* Inline warning inside the participation panels (the .error box is for whole-page errors). */
+.warn {
+  color: var(--bad);
+  font-weight: 600;
+}
 .crumb {
   margin: 0;
   font-size: 14px;
