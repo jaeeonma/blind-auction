@@ -2,8 +2,8 @@
 
 NFT를 ETH로 비공개 입찰하는 경매(Commit-Reveal). 입찰가는 해시로 숨겨 내고, 입찰 기간이 끝나면 각자 공개한다. NFT와 ETH의 교환은 스마트 컨트랙트가 보장하고, Indexer가 이벤트를 PostgreSQL에 모으며, REST API가 조회를 제공한다.
 
-- **동작하는 것:** 경매 생성 → 입찰 → 공개 → 낙찰·정산 → 출금 전체, 이벤트 수집(중단 후 재시작 시 누락·중복 없음), 조회 API, 사용자 스크립트, 시연용 조회 화면
-- **테스트:** 컨트랙트 92개(커버리지 줄 100%), 통합 71개(실제 프로세스를 띄워 확인하는 시스템 테스트 포함)
+- **동작하는 것:** 경매 생성 → 입찰 → 공개 → 낙찰·정산 → 출금 전체, 이벤트 수집(중단 후 재시작 시 누락·중복 없음), 조회 API, 사용자 스크립트, 시연용 웹 화면(조회, 브라우저에서 참여)
+- **테스트:** 컨트랙트 92개(커버리지 줄 100%), 통합 108개(실제 프로세스를 띄워 확인하는 시스템 테스트 포함)
 - **설계 문서:** [docs/design.md](docs/design.md). 이 README는 요약과 이유만 담고, 자세한 내용은 "design.md N번"으로 연결한다.
 
 ## 목차
@@ -49,8 +49,14 @@ npm run api
 cd contracts && npm run demo
 curl http://localhost:3000/auctions/0    # Windows PowerShell: curl.exe
 
-# 6. 조회 화면: 브라우저로 http://localhost:3000/ 을 연다 (3초마다 새로고침)
+# 6. 웹 화면: 브라우저로 http://localhost:3000/ 을 연다 (3초마다 새로고침)
+#    위쪽 계정 줄에서 테스트 계정을 고르면 경매 만들기·입찰·공개·종료·출금, 시간 앞당기기를 할 수 있다
 ```
+
+**웹 화면에서 참여할 때** (design.md 17번 B)
+- 판매자는 계정 0, 입찰자 A~D는 계정 1~4로 고르면 7번 예시와 같다. 경매 목록 위 "새 경매 만들기" → 경매 상세 위 "내 참여"에서 입찰 → "입찰 마감으로" → 공개 → "공개 마감으로" → 경매 종료 → 계정 줄의 출금.
+- 입찰가와 secret은 이 브라우저의 저장소에만 있다. 입찰한 주소(`localhost` 또는 `127.0.0.1`) 그대로 접속해야 공개할 수 있고, 브라우저 저장소를 지우면 공개할 수 없어 보증금이 몰수된다. 계정 줄의 "내보내기"로 백업하고 "가져오기"로 되살린다. 스크립트의 `.bids/` 파일도 가져올 수 있다.
+- 노드를 다시 켜고 `deploy`를 하면 화면을 새로고침한다. 화면은 배포 기록(`contracts/deployments/localhost.json`)으로 컨트랙트를 찾는다.
 
 **Windows PowerShell 5.1에서 실행할 때**
 - `npm.ps1 파일을 로드할 수 없습니다`(실행 정책 오류)가 나오면 `npm` 대신 `npm.cmd`로 실행한다. 예: `npm.cmd run demo`
@@ -101,7 +107,7 @@ curl http://localhost:3000/auctions/0    # Windows PowerShell: curl.exe
 
 ## Outline 요구사항 대응
 
-과제 Outline의 요구사항마다 구현 위치와 확인하는 테스트를 한 줄로 정리했다. 이유와 자세한 내용은 design.md 번호를 따라가면 된다. 테스트 파일은 `contracts/test/`(단위)와 `tests/integration/`(통합)에 있다.
+과제 Outline의 요구사항마다 구현 위치와 확인하는 테스트를 한 줄로 정리했다. 이유와 자세한 내용은 design.md 번호를 따라가면 된다. 테스트 파일은 `contracts/test/`(단위)와 `tests/integration/`·`tests/web/`(통합)에 있다.
 
 **기능 요구사항**
 
@@ -212,6 +218,8 @@ flowchart LR
   subgraph user["사용자 컴퓨터"]
     S["사용자 스크립트<br/>(Hardhat task, 지갑)"]
     F[".bids/<br/>입찰가·secret 파일"]
+    W["웹 화면 (브라우저, 시연용)<br/>노드의 테스트 계정"]
+    L["브라우저 저장소<br/>입찰가·secret"]
   end
   C["BlindAuction 컨트랙트<br/>(Hardhat 노드)"]
   I["Indexer<br/>별도 프로세스"]
@@ -224,7 +232,9 @@ flowchart LR
   I -- "4. 이벤트 + 책갈피<br/>한 DB 트랜잭션" --> D
   A -- "5. 조회 (읽기 전용)" --> D
   S -. "6. GET /auctions/..." .-> A
-  W["웹 화면 (브라우저, 시연용)"] -. "7. 화면 조회 (3초마다)" .-> A
+  W -- "1. 저장" --> L
+  W -- "2. 트랜잭션" --> C
+  W -. "7. 화면 조회 (3초마다)" .-> A
 ```
 
 | 구성 요소 | 하는 일 | 위치 |
@@ -234,7 +244,7 @@ flowchart LR
 | Indexer | 이벤트를 블록 범위로 읽어 DB에 저장. 책갈피로 이어 읽음 | `indexer/` |
 | PostgreSQL | 검색하기 쉽게 모은 사본. 테이블 정의는 한 곳 | `db/schema.sql` |
 | API | DB를 조회해 돌려줌. 쓰기 없음. 시연용 화면 파일도 제공 | `api/` |
-| 웹 화면 (시연용) | 경매 목록·상세·사용자별 참여 경매를 보여 줌. API를 3초마다 불러오고, Indexer가 멈추면 표시 (design.md 17번) | `web/` |
+| 웹 화면 (시연용) | 조회: 경매 목록·상세·사용자별 참여 경매. API를 3초마다 불러오고, Indexer가 멈추면 표시. 참여: 스크립트와 같은 확인을 거쳐 브라우저에서 노드로 직접 트랜잭션을 보냄 (design.md 17번) | `web/` |
 
 **Indexer와 API를 따로 실행하는 이유:** Indexer가 멈추거나 재시작해도 API는 계속 조회에 답한다. `asOf`를 보면 데이터가 어느 블록 기준인지 알 수 있다.
 
@@ -258,7 +268,7 @@ indexer/     이벤트 수집 → DB, 복구 명령(reset.ts)
 api/         조회 API (Express), 화면 파일 제공
 web/         시연용 웹 화면 (HTML·CSS·JS, 빌드 없음)
 db/          테이블 생성 SQL, db:init
-tests/       통합 테스트 (Vitest + Supertest)
+tests/       통합 테스트 (Vitest + Supertest), 웹 화면 테스트(tests/web/)
 docs/        설계 문서
 ```
 
@@ -267,7 +277,7 @@ docs/        설계 문서
 ```bash
 cd contracts && npx hardhat test       # 컨트랙트·스크립트 92개 (몇 초)
 cd contracts && npm run coverage       # 커버리지
-npm test                               # 통합 71개 (루트, 약 2분)
+npm test                               # 통합 108개 (루트, 약 2분)
 ```
 
 통합 테스트는 PostgreSQL이 떠 있어야 한다(`docker compose up -d`). Hardhat 노드는 테스트가 직접 8546 포트에 띄웠다가 끄므로 개발용 노드(8545)와 겹치지 않는다. 테스트마다 임시 스키마나 임시 데이터베이스를 만들어 쓰고 지워서 개발 데이터는 건드리지 않는다.
@@ -278,9 +288,9 @@ npm test                               # 통합 71개 (루트, 약 2분)
 | 사용자 스크립트 | 38 | secret 파일을 전송 전에 저장하는지, 보내기 전 확인, 손상된 파일, demo 반복 실행, 배포 기록의 주소 확인 |
 | DB 스키마 | 11 | 중복 방지, uint256 정확도, 주소·결과 칼럼 검사 |
 | Indexer | 13 | DB = 컨트랙트, 재시작, 같은 이벤트 두 번, DB·노드 오류 시 롤백, 시작 확인(설정 오류·노드 재시작) |
-| API | 31 | 상태 경계값(마감 −1초, 마감 정각), 필터, 오류 코드, 화면 파일 제공(쓰기 거부, web/ 밖 접근 거부) |
+| API | 33 | 상태 경계값(마감 −1초, 마감 정각), 필터, 오류 코드, 화면 파일 제공(쓰기 거부, web/ 밖 접근 거부, 브라우저용 ethers, 배포 기록) |
 | 시스템 | 6 | 모든 구성 요소를 **실제 프로세스**로 띄워 확인 (아래). 6번째는 틀린 DEPLOY_BLOCK이면 Indexer가 스스로 멈추는지 |
-| 웹 화면 | 10 | 상태 이름, 남은 시간, 금액 표시, Indexer 멈춤 판단, 화면 경로. API 값을 HTML로 넣는 코드(innerHTML 등)가 없는지 |
+| 웹 화면 | 45 | 조회: 상태 이름, 남은 시간, 금액 표시, Indexer 멈춤 판단, 화면 경로, API 값을 HTML로 넣는 코드(innerHTML 등)가 없는지. 참여(테스트 노드에서 브라우저 모듈 실행): secret을 전송 전에 저장하는지, 저장 실패·보내기 전 확인에 걸리면 트랜잭션을 보내지 않는지, 손상·변조된 저장값, 가져오기, 시간 앞당기기, 노드 주소 제한과 chain id 확인, 직접 적은 ABI가 컴파일 결과와 같은지 |
 
 **시스템 테스트** (design.md 14번 통합 테스트). 스크립트로 트랜잭션을 보내고, Indexer·API 프로세스를 띄우거나 강제 종료하며 확인한다.
 
@@ -333,7 +343,8 @@ BlindAuction에서 빠진 분기 하나는 `finalize`의 재진입 잠금(`nonRe
 | 자산 전송 | 직접 보내지 않고 장부에 적어 각자 출금(Pull). 한 명이 받기를 거부해도 다른 사람은 영향 없음 | 받기 거부 컨트랙트 |
 | 재진입 | 장부를 먼저 0으로 만든 뒤 송금(CEI) + `nonReentrant`. NFT 전송도 상태 기록 뒤에 한다 | 재진입 공격 컨트랙트(`ReentrantBidder`) |
 
-- **입찰가 비밀 유지:** 체인에는 해시만 올라간다. secret은 입찰자 컴퓨터의 `.bids/`에만 저장되고 서버·DB·Git에는 없다(`.gitignore`). 스크립트는 secret을 화면에 출력하지 않는다.
+- **입찰가 비밀 유지:** 체인에는 해시만 올라간다. secret은 입찰자 컴퓨터의 `.bids/`(스크립트) 또는 브라우저 저장소(웹 화면)에만 저장되고 서버·DB·Git에는 없다(`.gitignore`). 스크립트는 secret을 화면에 출력하지 않는다.
+- **웹 화면:** API에서 받은 값은 `textContent`로만 넣는다(XSS 방지, `innerHTML` 등을 쓰지 않는지 테스트로 확인). 쓰기는 브라우저에서 노드로 직접 보내고 API는 조회 전용 그대로다. 노드 주소(`?rpc=`)는 이 컴퓨터의 노드만 받고, 노드의 chain id가 배포 기록과 같은지 확인한다. 다른 사람의 노드가 단계를 거짓으로 알려 주면 공개 때 secret을 받아 갈 수 있어서다.
 - **비밀값:** 개인키와 DB 비밀번호는 `.env`에만 두고 `.env.example`만 커밋한다.
 - **컨트랙트 코드:** NFT 표준과 재진입 잠금은 직접 만들지 않고 OpenZeppelin 5를 쓴다. 에러는 custom error로 구분한다.
 
@@ -342,6 +353,7 @@ BlindAuction에서 빠진 분기 하나는 `finalize`의 재진입 잠금(`nonRe
 - 경매 대상 NFT는 정상 동작하는 ERC-721이라고 가정한다. 전송을 막는 NFT면 종료가 실패해 보증금이 묶일 수 있다.
 - 블록 생성자는 블록 시간을 몇 초 조정할 수 있다. 입찰 기간이 최소 10분이라 영향이 작다.
 - 로컬 Hardhat 네트워크 기준이라 블록 재구성(reorg)은 다루지 않는다.
+- 웹 화면은 시연용이다. 로컬 노드가 열어 둔 테스트 계정으로 서명하고(지갑 연동 없음), secret을 브라우저 저장소에 암호화하지 않고 둔다. 같은 컴퓨터의 다른 사용자나 브라우저 확장 프로그램이 볼 수 있다. 이 컴퓨터에서 도는 노드 자체가 악성이면 막지 못한다.
 - `contracts/`에서 `npm audit`을 실행하면 Hardhat 도구 묶음(hardhat-toolbox)의 개발 의존성에서 경고가 나온다. 컴파일·테스트에만 쓰는 도구이고 배포되는 컨트랙트에는 포함되지 않는다. 컨트랙트가 쓰는 OpenZeppelin(`npm audit --omit=dev`)과 루트 패키지는 경고가 없다.
 
 ## 7. 개발 과정
@@ -364,6 +376,7 @@ BlindAuction에서 빠진 분기 하나는 `finalize`의 재진입 잠금(`nonRe
 | | `docs/final-check` | [#14](https://github.com/jaeeonma/blind-auction/pull/14) | Outline 요구사항 대응 표, 문서 보완 |
 | | `feat/startup-checks` | [#15](https://github.com/jaeeonma/blind-auction/pull/15) | 노드 재시작·설정 오류 안내 (스크립트 배포 주소 확인, Indexer 시작 확인) |
 | | `feat/web-view` | [#16](https://github.com/jaeeonma/blind-auction/pull/16) | 시연용 조회 화면 (design.md 17번 A) |
+| | `feat/web-actions` | [#17](https://github.com/jaeeonma/blind-auction/pull/17) | 시연용 참여 화면 (design.md 17번 B) |
 
 **작업 규칙**
 - 커밋은 기능 하나가 테스트를 통과할 때마다 작게 나눈다. 메시지는 Conventional Commits + 한국어(`feat(contract): 입찰 기능 추가`). 6단계 전까지 `main`에 커밋 48개.

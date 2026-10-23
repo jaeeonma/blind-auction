@@ -24,9 +24,9 @@ export function el(tag, attrs = {}, ...children) {
 }
 
 /**
- * Replaces everything inside `parent`.
+ * Replaces everything inside `parent`. Strings become text nodes (replaceChildren never parses HTML).
  * @param {Element} parent
- * @param {...Node} nodes
+ * @param {...(Node | string)} nodes
  */
 export function replace(parent, ...nodes) {
   parent.replaceChildren(...nodes);

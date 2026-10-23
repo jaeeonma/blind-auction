@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import request from "supertest";
 import type { Express } from "express";
@@ -326,6 +329,32 @@ describe("API (design.md 11번)", () => {
       await request(app).post("/").send({}).expect(404);
       await request(app).put("/js/app.js").send("x").expect(404);
       await request(app).delete("/index.html").expect(404);
+    });
+
+    it("serves the browser build of ethers (same version as the backend) for the import map", async () => {
+      const res = await request(app).get("/vendor/ethers.min.js").expect(200).expect("Content-Type", /javascript/);
+      expect(res.text).toContain('version="6.17.0"');
+      const page = await request(app).get("/").expect(200);
+      expect(page.text).toContain('"ethers": "/vendor/ethers.min.js"');
+    });
+
+    it("serves the deployment record from DEPLOYMENTS_DIR, and explains when there is none", async () => {
+      const dir = mkdtempSync(path.join(tmpdir(), "deployments-"));
+      const before = process.env.DEPLOYMENTS_DIR;
+      process.env.DEPLOYMENTS_DIR = dir;
+      try {
+        const missing = await request(app).get("/deployment.json").expect(404);
+        expect(missing.body.error).toContain("npm run deploy");
+
+        const record = { network: "localhost", chainId: 31337, blindAuction: "0x" + "1".repeat(40), mockNft: "0x" + "2".repeat(40), deployBlock: 2 };
+        writeFileSync(path.join(dir, "localhost.json"), JSON.stringify(record));
+        const res = await request(app).get("/deployment.json").expect(200).expect("Cache-Control", "no-store");
+        expect(res.body).toEqual(record);
+      } finally {
+        if (before === undefined) delete process.env.DEPLOYMENTS_DIR;
+        else process.env.DEPLOYMENTS_DIR = before;
+        rmSync(dir, { recursive: true, force: true });
+      }
     });
 
     it("does not serve files outside web/", async () => {

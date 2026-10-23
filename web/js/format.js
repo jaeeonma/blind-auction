@@ -64,6 +64,20 @@ export function formatEth(wei) {
 }
 
 /**
+ * Like formatEth but cut (not rounded) to `digits` decimals, for balances that gas makes long:
+ * "9999.9993 ETH". Ledger amounts and bids use formatEth, which is exact.
+ * @param {string | bigint} wei
+ * @param {number} [digits]
+ * @returns {string}
+ */
+export function formatEthShort(wei, digits = 4) {
+  const value = BigInt(wei);
+  const whole = value / WEI_PER_ETH;
+  const fraction = (value % WEI_PER_ETH).toString().padStart(18, "0").slice(0, digits).replace(/0+$/, "");
+  return `${whole}${fraction ? `.${fraction}` : ""} ETH`;
+}
+
+/**
  * "0x1234…abcd" for tables; the full address is shown on hover and on the detail screens.
  * @param {string} address
  * @returns {string}

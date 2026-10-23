@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express, { type ErrorRequestHandler, type Express } from "express";
 import type { Pool } from "pg";
@@ -15,6 +17,19 @@ import {
 // user's wallet straight to the contract (design.md 3번).
 
 const WEB_DIR = fileURLToPath(new URL("../web/", import.meta.url));
+// The browser build of the same ethers version the backend uses, so the demo works offline (design.md 17번).
+const ETHERS_BROWSER_BUILD = fileURLToPath(new URL("../node_modules/ethers/dist/ethers.min.js", import.meta.url));
+
+/**
+ * The deployment record written by `npm run deploy` (contracts/deployments/localhost.json, or
+ * DEPLOYMENTS_DIR like the scripts). It only holds public addresses and the deploy block.
+ */
+function deploymentFile(): string {
+  const dir = process.env.DEPLOYMENTS_DIR
+    ? path.resolve(process.env.DEPLOYMENTS_DIR)
+    : fileURLToPath(new URL("../contracts/deployments/", import.meta.url));
+  return path.join(dir, "localhost.json");
+}
 
 class HttpError extends Error {
   constructor(
@@ -83,6 +98,21 @@ export function createApp(pool: Pool): Express {
   // Demo web screens (design.md 17번): plain files from web/, GET only. Mounted after the API routes,
   // so it never shadows them; anything that is neither a route nor a file still gets the JSON 404.
   app.use(express.static(WEB_DIR, { index: "index.html" }));
+
+  // ethers for the participation screens: the browser imports it through an import map.
+  app.get("/vendor/ethers.min.js", (_req, res) => {
+    res.type("text/javascript").sendFile(ETHERS_BROWSER_BUILD);
+  });
+
+  // Contract addresses for the participation screens, read fresh on every request so a new
+  // `npm run deploy` is picked up without restarting the API.
+  app.get("/deployment.json", (_req, res) => {
+    const file = deploymentFile();
+    if (!existsSync(file)) {
+      throw new HttpError(404, '배포 기록이 없습니다. "cd contracts && npm run deploy"를 먼저 실행하세요');
+    }
+    res.set("Cache-Control", "no-store").type("application/json").sendFile(file);
+  });
 
   app.use((_req, res) => {
     res.status(404).json({ error: "not found" });
