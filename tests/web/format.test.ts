@@ -4,6 +4,7 @@ import {
   bidResult,
   formatDuration,
   formatEth,
+  formatEthShort,
   nextStep,
   parseAddress,
   parseRoute,
@@ -41,6 +42,12 @@ describe("web: format helpers", () => {
     expect(formatEth(uint256Max)).toBe(
       "115792089237316195423570985008687907853269984665640564039457.584007913129639935 ETH",
     );
+  });
+
+  it("cuts long balances to a few decimals without rounding up", () => {
+    expect(formatEthShort(9999999346200000000000n)).toBe("9999.9993 ETH");
+    expect(formatEthShort("5000000000000000000")).toBe("5 ETH");
+    expect(formatEthShort("1")).toBe("0 ETH");
   });
 
   it("shortens addresses and hashes for tables", () => {

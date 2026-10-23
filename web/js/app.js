@@ -2,6 +2,7 @@
 import { ApiError, getAuction, listAuctions, listUserAuctions } from "./api.js";
 import { el, replace } from "./dom.js";
 import { FreshnessTracker, formatTime, parseAddress, parseRoute } from "./format.js";
+import { Participation } from "./participate.js";
 import { auctionDetail, auctionList, userAuctions } from "./views.js";
 
 const REFRESH_MS = 3000;
@@ -12,6 +13,15 @@ const searchForm = /** @type {HTMLFormElement} */ (document.getElementById("sear
 const searchInput = /** @type {HTMLInputElement} */ (document.getElementById("search-input"));
 
 const freshness = new FreshnessTracker();
+const participation = new Participation({
+  accountBox: /** @type {HTMLElement} */ (document.getElementById("account")),
+  notice: /** @type {HTMLElement} */ (document.getElementById("notice")),
+  // After a transaction (or an account switch) redraw at once instead of waiting for the next block.
+  onTransaction: () => {
+    shownKey = "";
+    void refresh();
+  },
+});
 /** Route + block of what is on screen now; redraw only when one of them changes. */
 let shownKey = "";
 
@@ -48,13 +58,18 @@ async function refresh() {
   try {
     const { asOf, nodes } = await load(route);
     const now = Date.now();
-    freshness.update(asOf.blockNumber, now);
+    const newBlock = freshness.update(asOf.blockNumber, now);
     const key = `${routeKey}@${asOf.blockNumber}`;
     if (key !== shownKey) {
       replace(main, ...nodes);
       shownKey = key;
     }
-    showStatus(freshness.isStale(now) ? "stale" : "ok", `블록 #${asOf.blockNumber} · ${formatTime(asOf.blockTime)}`);
+    if (newBlock) void participation.refreshAccount();
+    const waiting = participation.indexedUpTo(asOf.blockNumber);
+    showStatus(
+      freshness.isStale(now) ? "stale" : "ok",
+      `블록 #${asOf.blockNumber} · ${formatTime(asOf.blockTime)}${waiting ? ` · ${waiting}` : ""}`,
+    );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const status = err instanceof ApiError ? err.status : 0;
@@ -89,5 +104,6 @@ window.addEventListener("hashchange", () => {
   void refresh();
 });
 
+void participation.init();
 void refresh();
 setInterval(() => void refresh(), REFRESH_MS);
