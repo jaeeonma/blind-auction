@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, inject, it } from "vitest";
+import { Wallet } from "ethers";
 import { Indexer } from "../../indexer/indexer.js";
+import { checkStartup, StartupCheckFailed } from "../../indexer/startup.js";
 import { createTestDb, type TestDb } from "../helpers/db.js";
 import {
   auctionTimes,
@@ -215,5 +217,83 @@ describe("Indexer (design.md 9번)", () => {
     // Node reachable again (same DB, same bookmark): catches up.
     await newIndexer().syncToHead();
     expect(await counts()).toEqual({ auctions: 1, bids: 0 });
+  });
+});
+
+describe("Indexer startup check (design.md 9번 시작할 때 확인)", () => {
+  let db: TestDb;
+  let chain: Chain;
+
+  beforeAll(async () => {
+    db = await createTestDb();
+  });
+  afterAll(async () => {
+    await db?.drop();
+  });
+  beforeEach(async () => {
+    await db.pool.query("TRUNCATE bids, auctions, indexer_state");
+    chain = await deployContracts(inject("rpcUrl"));
+  });
+
+  const check = (options: Partial<{ contractAddress: string; deployBlock: number }> = {}) =>
+    checkStartup(chain.provider, db.pool, {
+      contractAddress: chain.auctionAddress,
+      deployBlock: chain.deployBlock,
+      ...options,
+    });
+
+  /** Expects a StartupCheckFailed whose message matches. */
+  async function expectStop(promise: Promise<unknown>, message: RegExp) {
+    const err = await promise.then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(StartupCheckFailed);
+    expect((err as Error).message).toMatch(message);
+  }
+
+  it("passes with the right CONTRACT_ADDRESS and DEPLOY_BLOCK, and finds the real deploy block", async () => {
+    const report = await check();
+    expect(report.actualDeployBlock).toBe(chain.deployBlock);
+    expect(report.warnings).toEqual([]);
+  });
+
+  it("DEPLOY_BLOCK before the real deploy block (e.g. left at 0) only warns", async () => {
+    const report = await check({ deployBlock: 0 });
+    expect(report.warnings).toHaveLength(1);
+    expect(report.warnings[0]).toContain(`실제 배포 블록: ${chain.deployBlock}`);
+  });
+
+  it("stops when CONTRACT_ADDRESS has no contract (node restarted, not deployed again)", async () => {
+    const empty = Wallet.createRandom().address;
+    await expectStop(check({ contractAddress: empty }), /CONTRACT_ADDRESS에 컨트랙트가 없습니다[\s\S]*npm run deploy/);
+  });
+
+  it("stops when DEPLOY_BLOCK is ahead of the chain (.env from before the node restarted)", async () => {
+    const head = await chain.provider.getBlockNumber();
+    await expectStop(check({ deployBlock: head + 1000 }), new RegExp(`최신 블록보다 뒤[\\s\\S]*DEPLOY_BLOCK: ${head + 1000}, 최신 블록: ${head}`));
+  });
+
+  it("stops when DEPLOY_BLOCK is after the real deploy block, and tells the real one", async () => {
+    await createAuction(chain); // a few more blocks, so DEPLOY_BLOCK + 1 still exists
+    await expectStop(
+      check({ deployBlock: chain.deployBlock + 1 }),
+      new RegExp(`이벤트\\(경매 생성 등\\)를 놓칩니다[\\s\\S]*실제 배포 블록: ${chain.deployBlock}$`),
+    );
+  });
+
+  it("stops when the DB bookmark is ahead of the chain (DB from before the node restarted)", async () => {
+    const head = await chain.provider.getBlockNumber();
+    await db.pool.query("INSERT INTO indexer_state (id, last_block, last_block_time) VALUES (1, $1, 0)", [head + 100]);
+    await expectStop(check(), new RegExp(`책갈피가 체인의 최신 블록보다 뒤[\\s\\S]*indexer:reset[\\s\\S]*책갈피: ${head + 100}`));
+  });
+
+  it("a node that cannot be reached is not a configuration error (the caller retries)", async () => {
+    const err = await checkStartup(testProvider("http://127.0.0.1:1"), db.pool, {
+      contractAddress: chain.auctionAddress,
+      deployBlock: chain.deployBlock,
+    }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err).not.toBeInstanceOf(StartupCheckFailed);
   });
 });
