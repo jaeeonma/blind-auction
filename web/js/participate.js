@@ -6,6 +6,7 @@ import {
   createAuction,
   finalizeAuction,
   findBid,
+  importBids,
   keyFor,
   mintNft,
   moveTimeTo,
@@ -307,7 +308,38 @@ export class Participation {
       setTimeout(() => URL.revokeObjectURL(url), 1000);
       this.show("ok", `저장된 입찰 ${count}건을 내보냈습니다. 파일에는 secret이 들어 있으니 다른 사람과 공유하지 마세요.`);
     });
-    return el("span", { class: "saved-bids", title: "입찰가와 secret은 이 브라우저에만 있습니다. 저장소를 지우기 전에 내보내 두세요." }, ` · 이 브라우저에 저장된 입찰 ${count}건 `, button);
+    const input = /** @type {HTMLInputElement} */ (el("input", { type: "file", accept: ".json,application/json", multiple: "", hidden: "" }));
+    input.addEventListener("change", () => void this.importFiles(input));
+    const importButton = el("button", { type: "button", class: "small", title: "스크립트의 .bids/ 파일이나 내보낸 JSON" }, "가져오기");
+    importButton.addEventListener("click", () => input.click());
+    return el(
+      "span",
+      { class: "saved-bids", title: "입찰가와 secret은 이 브라우저에만 있습니다. 저장소를 지우기 전에 내보내 두세요." },
+      ` · 이 브라우저에 저장된 입찰 ${count}건 `,
+      button,
+      " ",
+      importButton,
+      input,
+    );
+  }
+
+  /**
+   * (선택, design.md 17번) Secret files of the scripts (.bids/) or an export of this page.
+   * @param {HTMLInputElement} input
+   */
+  async importFiles(input) {
+    if (!this.chain || !this.store) return;
+    const files = await Promise.all([...(input.files ?? [])].map(async (f) => ({ name: f.name, text: await f.text() })));
+    input.value = "";
+    try {
+      const r = importBids(this.chain, this.store, files);
+      const lines = [`가져오기: ${r.added.length}건 추가`, ...r.added, ...r.skipped.map((x) => `건너뜀 - ${x}`)];
+      this.show(r.skipped.length && !r.added.length ? "error" : "ok", lines.join(" / "));
+    } catch (err) {
+      this.show("error", `가져오기 실패: ${errorMessage(err)}`);
+    }
+    void this.refreshAccount();
+    this.onTransaction(); // the panel shows whether a secret is saved
   }
 
   /**

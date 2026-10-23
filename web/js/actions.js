@@ -349,3 +349,84 @@ export async function auctionEnds(chain, auctionId) {
   const a = await chain.auction.getFunction("getAuction")(auctionId);
   return { biddingEnd: /** @type {bigint} */ (a.biddingEnd), revealEnd: /** @type {bigint} */ (a.revealEnd) };
 }
+
+// ── import (.bids/ files of the scripts, or an export of this page) ──
+
+/**
+ * Adds saved bids from files: a script's secret file (one bid) or this page's export (a list).
+ * Each bid must belong to this node's contract and its value + secret must give its commitment.
+ * An entry already in the browser is never overwritten (it may be the secret of the bid on chain).
+ * @param {Chain} chain
+ * @param {import("./secrets.js").SecretStore} store
+ * @param {Array<{ name: string, text: string }>} files
+ * @returns {{ added: string[], skipped: string[] }} human-readable lines
+ */
+export function importBids(chain, store, files) {
+  /** @type {string[]} */
+  const added = [];
+  /** @type {string[]} */
+  const skipped = [];
+  for (const file of files) {
+    let parsed;
+    try {
+      parsed = JSON.parse(file.text);
+    } catch {
+      skipped.push(`${file.name}: JSON 파일이 아닙니다`);
+      continue;
+    }
+    for (const bid of Array.isArray(parsed) ? parsed : [parsed]) {
+      const label = `${file.name}: 경매 ${bid?.auctionId ?? "?"}번`;
+      const problem = checkImported(chain, bid);
+      if (problem) {
+        skipped.push(`${label}: ${problem}`);
+        continue;
+      }
+      const key = keyFor(chain, bid.auctionId, bid.bidder);
+      const existing = store.has(key) ? safeLoad(store, key) : null;
+      if (existing && existing.secret === bid.secret && existing.value === bid.value) {
+        skipped.push(`${label}: 이미 저장되어 있습니다`);
+        continue;
+      }
+      if (store.has(key)) {
+        skipped.push(`${label}: 이 브라우저에 다른 값이 저장되어 있어 덮어쓰지 않았습니다`);
+        continue;
+      }
+      store.save(bid);
+      added.push(`${label} (입찰자 ${bid.bidder})`);
+    }
+  }
+  return { added, skipped };
+}
+
+/**
+ * @param {Chain} chain
+ * @param {any} bid
+ * @returns {string} empty when the bid can be imported
+ */
+function checkImported(chain, bid) {
+  const fields = ["contract", "auctionId", "bidder", "value", "secret", "deposit", "commitment", "createdAt"];
+  if (typeof bid !== "object" || bid === null || typeof bid.chainId !== "number" || fields.some((f) => typeof bid[f] !== "string")) {
+    return "secret 파일 형식이 아닙니다";
+  }
+  if (bid.chainId !== chain.chainId || bid.contract.toLowerCase() !== chain.deployment.blindAuction.toLowerCase()) {
+    return `지금 노드의 컨트랙트가 아닌 입찰입니다 (노드를 다시 켜기 전의 입찰일 수 있음). 컨트랙트: ${bid.contract}`;
+  }
+  try {
+    if (computeCommitment(BigInt(bid.value), bid.secret, bid.bidder) !== bid.commitment) return "입찰가와 secret이 해시와 맞지 않습니다 (손상된 파일)";
+  } catch {
+    return "입찰가, secret, 입찰자 주소를 읽을 수 없습니다 (손상된 파일)";
+  }
+  return "";
+}
+
+/**
+ * @param {import("./secrets.js").SecretStore} store
+ * @param {string} key
+ */
+function safeLoad(store, key) {
+  try {
+    return store.load(key);
+  } catch {
+    return null;
+  }
+}
