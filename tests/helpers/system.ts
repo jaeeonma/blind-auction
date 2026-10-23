@@ -106,6 +106,29 @@ export async function startService(
   };
 }
 
+/**
+ * Runs `indexer/main.ts` or `api/main.ts` and waits for the process to exit by itself (e.g. a failed
+ * startup check). Returns the exit code, or null if it was still running after `timeoutMs` (then it is killed).
+ */
+export async function runServiceUntilExit(
+  name: "indexer" | "api",
+  env: Record<string, string>,
+  timeoutMs = 30_000,
+): Promise<{ code: number | null; output: string }> {
+  const child = spawn(process.execPath, ["--import", "tsx", `${name}/main.ts`], {
+    cwd: rootDir,
+    env: { ...process.env, ...env },
+  });
+  let output = "";
+  child.stdout!.on("data", (c: Buffer) => (output += c.toString()));
+  child.stderr!.on("data", (c: Buffer) => (output += c.toString()));
+  const exited = new Promise<number | null>((resolve) => child.once("exit", (code) => resolve(code)));
+  const timer = setTimeout(() => child.kill("SIGKILL"), timeoutMs);
+  const code = await exited;
+  clearTimeout(timer);
+  return { code: child.killed ? null : code, output };
+}
+
 /** Runs a one-shot backend command (e.g. `npm run indexer:reset`) as a process and returns its output. */
 export async function runBackendScript(file: string, env: Record<string, string>): Promise<string> {
   const child = spawn(process.execPath, ["--import", "tsx", file], { cwd: rootDir, env: { ...process.env, ...env } });

@@ -10,6 +10,7 @@ import {
   indexedBlock,
   runBackendScript,
   runScript,
+  runServiceUntilExit,
   scriptDirs,
   startService,
   waitFor,
@@ -35,22 +36,22 @@ describe("system: scripts → chain → Indexer → DB → API (design.md 14번)
 
   const script = (task: string, ...args: string[]) => runScript(task, args, dirs);
 
+  /** Indexer environment for the deployed contract (`overrides` replaces single settings). */
+  const indexerEnv = (batchSize = 3, overrides: Record<string, string> = {}) => ({
+    DATABASE_URL: db.url,
+    RPC_URL: rpcUrl,
+    CHAIN_ID: "31337",
+    CONTRACT_ADDRESS: deployment.blindAuction,
+    DEPLOY_BLOCK: String(deployment.deployBlock),
+    BATCH_SIZE: String(batchSize),
+    POLL_INTERVAL_MS: "200",
+    RETRY_DELAY_MS: "300",
+    ...overrides,
+  });
+
   /** Starts the Indexer process for the deployed contract. */
   async function startIndexer(batchSize = 3): Promise<Service> {
-    const s = await startService(
-      "indexer",
-      {
-        DATABASE_URL: db.url,
-        RPC_URL: rpcUrl,
-        CHAIN_ID: "31337",
-        CONTRACT_ADDRESS: deployment.blindAuction,
-        DEPLOY_BLOCK: String(deployment.deployBlock),
-        BATCH_SIZE: String(batchSize),
-        POLL_INTERVAL_MS: "200",
-        RETRY_DELAY_MS: "300",
-      },
-      "indexer: contract",
-    );
+    const s = await startService("indexer", indexerEnv(batchSize), "indexer: contract");
     services.push(s);
     return s;
   }
@@ -315,5 +316,26 @@ describe("system: scripts → chain → Indexer → DB → API (design.md 14번)
     await waitIndexed();
     expect(await snapshot()).toEqual(good); // rebuilt exactly from the chain
     await expectApiMatchesContract(0n);
+  });
+
+  it("4. an Indexer with a wrong DEPLOY_BLOCK stops with what to do instead of retrying forever (design.md 9번)", async () => {
+    const token = /토큰 (\d+)번 발행/.exec(await script("mint-nft"))![1]!;
+    await script("create-auction", "--token", token, "--bidding", "10m", "--reveal", "1d");
+    const createdAt = await provider.getBlockNumber(); // the AuctionCreated block
+    await script("bid", "--auction", "0", "--value", "1", "--deposit", "1", "--account", "1");
+
+    // DEPLOY_BLOCK just after the auction was created: AuctionCreated would be skipped and the bid
+    // could never be saved (foreign key). Before the startup check this retried forever.
+    const r = await runServiceUntilExit("indexer", indexerEnv(3, { DEPLOY_BLOCK: String(createdAt + 1) }));
+    expect(r.code).toBe(1); // exited by itself, not killed after the timeout
+    expect(r.output).toContain("시작 확인 실패");
+    expect(r.output).toContain("DEPLOY_BLOCK이 실제 배포 블록보다 뒤에 있어서 그 사이의 이벤트(경매 생성 등)를 놓칩니다");
+    expect(r.output).toContain(`DEPLOY_BLOCK: ${createdAt + 1}, 실제 배포 블록: ${deployment.deployBlock}`);
+    expect(await countRows()).toEqual({ auctions: 0, bids: 0 }); // nothing was written
+
+    // With the DEPLOY_BLOCK it suggested, the Indexer starts and saves everything.
+    await startIndexer();
+    await waitIndexed();
+    expect(await countRows()).toEqual({ auctions: 1, bids: 1 });
   });
 });

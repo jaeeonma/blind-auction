@@ -4,6 +4,7 @@ import pg from "pg";
 import { loadConfig } from "./config.js";
 import { Indexer } from "./indexer.js";
 import { runIndexer } from "./run.js";
+import { runStartupChecks, StartupCheckFailed } from "./startup.js";
 
 const config = loadConfig();
 
@@ -27,9 +28,34 @@ const stop = new AbortController();
 process.once("SIGINT", () => stop.abort());
 process.once("SIGTERM", () => stop.abort());
 
+const shutdown = async () => {
+  provider.destroy();
+  await pool.end();
+};
+
+// Startup checks (design.md 9번): a wrong CONTRACT_ADDRESS / DEPLOY_BLOCK / bookmark stops the Indexer
+// here with what to do, instead of retrying the same failure forever.
+try {
+  const report = await runStartupChecks(provider, pool, {
+    contractAddress: config.contractAddress,
+    deployBlock: config.deployBlock,
+    retryDelayMs: config.retryDelayMs,
+    signal: stop.signal,
+  });
+  if (!report) {
+    await shutdown();
+    process.exit(0); // Ctrl+C during the checks
+  }
+  for (const warning of report.warnings) console.log(`indexer: 경고: ${warning}`);
+} catch (err) {
+  if (!(err instanceof StartupCheckFailed)) throw err;
+  console.error(`indexer: 시작 확인 실패. Indexer를 멈춥니다.\n${err.message}`);
+  await shutdown();
+  process.exit(1);
+}
+
 console.log(`indexer: contract ${config.contractAddress}, reading from block ${(await indexer.lastProcessedBlock()) + 1}`);
 await runIndexer(indexer, { pollIntervalMs: config.pollIntervalMs, retryDelayMs: config.retryDelayMs, signal: stop.signal });
 
-provider.destroy();
-await pool.end();
+await shutdown();
 console.log("indexer: stopped");
