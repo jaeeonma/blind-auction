@@ -100,6 +100,14 @@ describe("web: chain connection", () => {
     );
   });
 
+  it("refuses a node whose chain id differs from the deployment record (eth_chainId)", async () => {
+    const err = await connect(inject("rpcUrl"), { ...deployment, chainId: 1 }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ChainSetupError);
+    expect((err as Error).message).toBe(
+      "노드의 chain id가 배포 기록과 달라서 연결하지 않았습니다. 배포 기록이 이 노드의 것인지 확인하세요. 배포 기록: 1, 노드: 31337",
+    );
+  });
+
   it("explains a node that cannot be reached", async () => {
     const err = await connect("http://127.0.0.1:1", deployment).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ChainSetupError);

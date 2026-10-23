@@ -101,11 +101,21 @@ export class ChainSetupError extends Error {}
 export async function connect(rpcUrl, deployment) {
   // Fixed chain id: ethers does not run its own network-detection retry loop (design.md 9번).
   const provider = new JsonRpcProvider(rpcUrl, deployment.chainId, { staticNetwork: true, cacheTimeout: -1 });
+  /** @type {number} */
+  let actualChainId;
   try {
-    await provider.getBlockNumber();
+    actualChainId = Number(await provider.send("eth_chainId", []));
   } catch {
     provider.destroy();
     throw new ChainSetupError(`노드에 연결할 수 없습니다. "cd contracts && npm run node"가 실행 중인지 확인하세요. 노드 주소: ${rpcUrl}`);
+  }
+  // staticNetwork trusts the chain id we pass, so ask the node itself: a node of another chain must not
+  // receive transactions meant for the one in the deployment record.
+  if (actualChainId !== deployment.chainId) {
+    provider.destroy();
+    throw new ChainSetupError(
+      `노드의 chain id가 배포 기록과 달라서 연결하지 않았습니다. 배포 기록이 이 노드의 것인지 확인하세요. 배포 기록: ${deployment.chainId}, 노드: ${actualChainId}`,
+    );
   }
   /** @type {Array<[string, string]>} */
   const contracts = [
