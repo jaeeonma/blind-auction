@@ -1,10 +1,24 @@
 // Participation UI (design.md 17번 B): the account bar, and running a transaction with feedback.
 // The transactions themselves are in actions.js; this file only wires them to the page.
 import { ChainSetupError, connect, rpcUrlFrom, testAccounts } from "./chain.js";
-import { findBid, keyFor, parseEthAmount, pendingOf, phaseOf, placeBid, revealFromStore, withdrawAll } from "./actions.js";
+import {
+  createAuction,
+  finalizeAuction,
+  findBid,
+  keyFor,
+  mintNft,
+  ownedTokens,
+  parseDuration,
+  parseEthAmount,
+  pendingOf,
+  phaseOf,
+  placeBid,
+  revealFromStore,
+  withdrawAll,
+} from "./actions.js";
 import { el, replace } from "./dom.js";
-import { formatEth, formatEthShort, shortAddress } from "./format.js";
-import { auctionPanel } from "./panels.js";
+import { formatEth, formatEthShort, formatTime, shortAddress } from "./format.js";
+import { auctionPanel, createPanel } from "./panels.js";
 import { browserStore } from "./secrets.js";
 
 const ACCOUNT_KEY = "blind-auction:account";
@@ -27,6 +41,8 @@ export class Participation {
     /** What the panel shows now; it is redrawn only when this changes, so typed input survives refreshes. */
     this.panelKey = "";
     this.store = browserStore();
+    /** Token minted last from this page: preselected in the create form. */
+    this.lastMinted = "";
     this.onTransaction = parts.onTransaction;
     /** @type {Chain | null} */
     this.chain = null;
@@ -62,10 +78,9 @@ export class Participation {
    * @param {{ name: string, id?: string }} route
    */
   async updatePanel(route) {
-    if (!this.chain || !this.account || route.name !== "auction" || route.id === undefined) {
-      this.setPanel("none");
-      return;
-    }
+    if (!this.chain || !this.account) return this.setPanel("none");
+    if (route.name === "list") return this.updateCreatePanel();
+    if (route.name !== "auction" || route.id === undefined) return this.setPanel("none");
     const chain = this.chain;
     const auctionId = BigInt(route.id);
     const account = this.account.address;
@@ -92,9 +107,73 @@ export class Participation {
         {
           bid: (value, deposit) => void this.bid(auctionId, value, deposit),
           reveal: () => void this.reveal(auctionId),
+          finalize: () => void this.finalize(auctionId),
         },
       ),
     );
+  }
+
+  async updateCreatePanel() {
+    const chain = /** @type {Chain} */ (this.chain);
+    const account = /** @type {{ address: string }} */ (this.account).address;
+    const tokens = await ownedTokens(chain, account);
+    if (this.account?.address !== account) return;
+    const key = JSON.stringify(["create", account, tokens.map(String), this.lastMinted]);
+    this.setPanel(key, () =>
+      createPanel(
+        { tokens, selected: this.lastMinted },
+        {
+          mint: () => void this.mint(),
+          create: (tokenId, bidding, reveal) => void this.create(tokenId, bidding, reveal),
+        },
+      ),
+    );
+  }
+
+  mint() {
+    return this.run("NFT 발행", async () => {
+      const r = await mintNft(/** @type {Chain} */ (this.chain), await this.signer());
+      this.lastMinted = r.tokenId.toString();
+      return { blockNumber: r.blockNumber, message: `테스트 NFT 토큰 ${r.tokenId}번을 발행했습니다 (계정 ${this.accountIndex}번)` };
+    });
+  }
+
+  /**
+   * @param {string} tokenInput
+   * @param {string} biddingInput e.g. 10m
+   * @param {string} revealInput e.g. 1d
+   */
+  create(tokenInput, biddingInput, revealInput) {
+    return this.run("경매 만들기", async () => {
+      if (!/^\d+$/.test(tokenInput)) throw new Error("경매에 올릴 NFT를 고르세요");
+      const r = await createAuction(
+        /** @type {Chain} */ (this.chain),
+        await this.signer(),
+        BigInt(tokenInput),
+        parseDuration(biddingInput),
+        parseDuration(revealInput),
+      );
+      location.hash = `#/auctions/${r.auctionId}`;
+      return {
+        blockNumber: r.blockNumber,
+        message:
+          `경매 ${r.auctionId}번을 만들었습니다${r.approved ? " (승인 후 생성)" : ""}. ` +
+          `입찰 마감 ${formatTime(Number(r.biddingEnd))}, 공개 마감 ${formatTime(Number(r.revealEnd))}`,
+      };
+    });
+  }
+
+  /** @param {bigint} auctionId */
+  finalize(auctionId) {
+    return this.run("경매 종료", async () => {
+      const r = await finalizeAuction(/** @type {Chain} */ (this.chain), await this.signer(), auctionId);
+      return {
+        blockNumber: r.blockNumber,
+        message: r.winner
+          ? `경매 ${auctionId}번을 종료했습니다. 낙찰가 ${formatEth(r.winningBid.toString())}, 몰수금 ${formatEth(r.forfeited.toString())}, 낙찰자: ${r.winner}`
+          : `경매 ${auctionId}번을 종료했습니다. 유효 입찰이 없어 NFT는 판매자에게 돌아갔습니다. 몰수금: ${formatEth(r.forfeited.toString())}`,
+      };
+    });
   }
 
   /**

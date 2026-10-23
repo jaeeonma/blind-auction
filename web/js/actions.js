@@ -1,8 +1,8 @@
 // Transactions of the participation screens (design.md 17번 B). Same checks and messages as the
 // scripts (contracts/scripts/lib, design.md 12번): what the contract would reject is refused before
 // sending, so the user sees why and pays no gas. The contract still enforces every rule.
-import { AbiCoder, hexlify, keccak256, parseEther } from "ethers";
-import { auctionInterface, findEvent, revertName } from "./chain.js";
+import { AbiCoder, ZeroAddress, hexlify, keccak256, parseEther } from "ethers";
+import { auctionInterface, findEvent, nftInterface, revertName } from "./chain.js";
 import { bidKey } from "./secrets.js";
 
 /** @typedef {import("./chain.js").Chain} Chain */
@@ -187,4 +187,128 @@ export async function revealFromStore(chain, signer, store, auctionId) {
 export function parseEthAmount(input) {
   if (!/^\d+(\.\d{1,18})?$/.test(input.trim())) throw new Error(`알 수 없는 ETH 금액입니다 (예: 3, 0.5). 입력: "${input}"`);
   return parseEther(input.trim());
+}
+
+// ── create and finalize ─────────────────────────────────────────────
+
+const UNIT_SECONDS = /** @type {Record<string, bigint>} */ ({ s: 1n, m: 60n, h: 3600n, d: 86400n });
+
+/**
+ * "90" | "90s" | "10m" | "2h" | "1d" → seconds. Same rule and message as the scripts.
+ * @param {string} input
+ */
+export function parseDuration(input) {
+  const m = /^(\d+)([smhd]?)$/.exec(input.trim());
+  if (!m) throw new Error(`알 수 없는 기간입니다. 숫자 뒤에 s, m, h, d를 붙이세요 (예: 10m, 1d). 입력: "${input}"`);
+  return BigInt(/** @type {string} */ (m[1])) * /** @type {bigint} */ (UNIT_SECONDS[m[2] || "s"]);
+}
+
+/**
+ * @param {Chain} chain
+ * @param {Signer} signer
+ */
+const nftAs = (chain, signer) => /** @type {import("ethers").Contract} */ (chain.nft.connect(signer));
+
+/**
+ * 시연용 테스트 NFT 발행 (to the signer). Returns the new token id from the Transfer event.
+ * @param {Chain} chain
+ * @param {Signer} signer
+ */
+export async function mintNft(chain, signer) {
+  const receipt = await (await nftAs(chain, signer).getFunction("mint")(await signer.getAddress())).wait();
+  const event = findEvent(receipt, nftInterface, "Transfer");
+  return { tokenId: /** @type {bigint} */ (event.args.tokenId), blockNumber: /** @type {number} */ (receipt?.blockNumber) };
+}
+
+/**
+ * Test NFTs `address` owns now (MockNFT numbers tokens from 0, so a local demo can just ask each one).
+ * @param {Chain} chain
+ * @param {string} address
+ * @returns {Promise<bigint[]>}
+ */
+export async function ownedTokens(chain, address) {
+  const next = Number(await chain.nft.getFunction("nextTokenId")());
+  const owners = await Promise.all(
+    Array.from({ length: next }, (_, i) => chain.nft.getFunction("ownerOf")(i).catch(() => null)),
+  );
+  return owners.flatMap((owner, i) => (owner && owner.toLowerCase() === address.toLowerCase() ? [BigInt(i)] : []));
+}
+
+/**
+ * 경매 생성: 주인 확인 → 기간 확인 → (필요하면) approve → createAuction. Same checks as the scripts.
+ * @param {Chain} chain
+ * @param {Signer} seller
+ * @param {bigint} tokenId
+ * @param {bigint} biddingDuration seconds
+ * @param {bigint} revealDuration seconds
+ */
+export async function createAuction(chain, seller, tokenId, biddingDuration, revealDuration) {
+  const sellerAddress = await seller.getAddress();
+  const auctionAddress = chain.deployment.blindAuction;
+
+  // Only the NFT owner can create the auction (design.md 13번).
+  /** @type {string | null} */
+  const owner = await chain.nft.getFunction("ownerOf")(tokenId).catch(() => null);
+  if (owner === null) throw new Error(`토큰 ${tokenId}번이 없습니다`);
+  if (owner.toLowerCase() === auctionAddress.toLowerCase()) {
+    throw new Error(`토큰 ${tokenId}번은 이미 경매 중입니다 (경매 컨트랙트가 보관하고 있음)`);
+  }
+  if (owner.toLowerCase() !== sellerAddress.toLowerCase()) {
+    throw new Error(`토큰 ${tokenId}번의 주인이 아닙니다. 주인: ${owner}, 호출한 계정: ${sellerAddress}`);
+  }
+
+  // Durations: bidding 10 minutes to 5 days, reveal 1 to 2 days (design.md 4번 Q2). Read from the contract.
+  const f = (/** @type {string} */ name) => chain.auction.getFunction(name)();
+  const [minBid, maxBid, minReveal, maxReveal] = await Promise.all(
+    ["MIN_BIDDING_DURATION", "MAX_BIDDING_DURATION", "MIN_REVEAL_DURATION", "MAX_REVEAL_DURATION"].map(f),
+  );
+  if (biddingDuration < minBid || biddingDuration > maxBid) {
+    throw new Error(`입찰 기간은 ${minBid}~${maxBid}초(10m~5d) 사이여야 합니다. 입력: ${biddingDuration}초`);
+  }
+  if (revealDuration < minReveal || revealDuration > maxReveal) {
+    throw new Error(`공개 기간은 ${minReveal}~${maxReveal}초(1d~2d) 사이여야 합니다. 입력: ${revealDuration}초`);
+  }
+
+  // The contract pulls the NFT with transferFrom, so it needs approval first.
+  const nft = nftAs(chain, seller);
+  const alreadyApproved =
+    /** @type {string} */ (await chain.nft.getFunction("getApproved")(tokenId)).toLowerCase() === auctionAddress.toLowerCase() ||
+    /** @type {boolean} */ (await chain.nft.getFunction("isApprovedForAll")(sellerAddress, auctionAddress));
+  if (!alreadyApproved) await (await nft.getFunction("approve")(auctionAddress, tokenId)).wait();
+
+  const receipt = await (
+    await auctionAs(chain, seller).getFunction("createAuction")(chain.deployment.mockNft, tokenId, biddingDuration, revealDuration)
+  ).wait();
+  const event = findEvent(receipt, auctionInterface, "AuctionCreated");
+  return {
+    auctionId: /** @type {bigint} */ (event.args.auctionId),
+    biddingEnd: /** @type {bigint} */ (event.args.biddingEnd),
+    revealEnd: /** @type {bigint} */ (event.args.revealEnd),
+    approved: !alreadyApproved,
+    blockNumber: /** @type {number} */ (receipt?.blockNumber),
+  };
+}
+
+/**
+ * 종료 (design.md 12번). Anyone may call it once the reveal phase is over (Q8).
+ * @param {Chain} chain
+ * @param {Signer} signer
+ * @param {bigint} auctionId
+ */
+export async function finalizeAuction(chain, signer, auctionId) {
+  const phase = await phaseOf(chain, auctionId);
+  if (phase === "finalized") throw new Error(`경매 ${auctionId}번은 이미 종료됐습니다`);
+  if (phase !== "awaiting_finalize") {
+    const { revealEnd } = await chain.auction.getFunction("getAuction")(auctionId);
+    throw new Error(`경매 ${auctionId}번은 아직 종료할 수 없습니다 (현재: ${phase}). 공개 마감: ${new Date(Number(revealEnd) * 1000).toISOString()} (${revealEnd})`);
+  }
+  const receipt = await (await auctionAs(chain, signer).getFunction("finalize")(auctionId)).wait();
+  const event = findEvent(receipt, auctionInterface, "AuctionFinalized");
+  return {
+    /** null when there was no valid bid (the NFT went back to the seller, design.md 4번 Q7) */
+    winner: event.args.winner === ZeroAddress ? null : /** @type {string} */ (event.args.winner),
+    winningBid: /** @type {bigint} */ (event.args.winningBid),
+    forfeited: /** @type {bigint} */ (event.args.forfeited),
+    blockNumber: /** @type {number} */ (receipt?.blockNumber),
+  };
 }

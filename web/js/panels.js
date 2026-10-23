@@ -17,7 +17,12 @@ import { formatEth, statusLabel } from "./format.js";
  * @typedef {{
  *   bid: (value: string, deposit: string) => void,
  *   reveal: () => void,
+ *   finalize: () => void,
  * }} AuctionHandlers
+ * @typedef {{
+ *   mint: () => void,
+ *   create: (tokenId: string, bidding: string, reveal: string) => void,
+ * }} CreateHandlers
  */
 
 /** Note under the bid form: where the secret lives and what losing it means (design.md 4번 Q4, 17번). */
@@ -55,7 +60,7 @@ function body(s, on) {
       if (s.bid.revealed) return [bidSummary(s)];
       return [bidSummary(s), revealBox(s, on)];
     case "awaiting_finalize":
-      return [s.bid ? bidSummary(s) : el("p", { class: "muted" }, "이 계정은 이 경매에 입찰하지 않았습니다."), el("p", {}, "공개 마감이 지났습니다. 누구나 경매를 종료할 수 있습니다.")];
+      return [s.bid ? bidSummary(s) : el("p", { class: "muted" }, "이 계정은 이 경매에 입찰하지 않았습니다."), finalizeBox(on)];
     default:
       return [el("p", { class: "muted" }, "종료된 경매입니다. 돌려받을 돈과 판매 대금은 위 계정 줄의 장부에서 출금합니다.")];
   }
@@ -120,4 +125,60 @@ function revealBox(s, on) {
     button,
     el("p", { class: "hint" }, "저장된 입찰가와 secret을 체인의 해시와 먼저 맞춰 본 뒤 보냅니다. 공개 마감까지 공개하지 않으면 보증금은 몰수됩니다."),
   );
+}
+
+/** @param {AuctionHandlers} on */
+function finalizeBox(on) {
+  const button = el("button", { type: "button" }, "경매 종료");
+  button.addEventListener("click", () => on.finalize());
+  return el(
+    "div",
+    { class: "action-form" },
+    button,
+    el("p", { class: "hint" }, "공개 마감이 지났습니다. 판매자가 아니어도 누구나 한 번 종료할 수 있습니다. 종료하면 NFT가 낙찰자(유효 입찰이 없으면 판매자)에게 가고 정산 금액이 장부에 적힙니다."),
+  );
+}
+
+/**
+ * "새 경매 만들기" panel of the auction list: mint a test NFT, then put one of the account's tokens up for auction.
+ * @param {{ tokens: bigint[], selected: string }} s tokens the account owns; selected = token id to preselect
+ * @param {CreateHandlers} on
+ */
+export function createPanel(s, on) {
+  const mint = el("button", { type: "button", class: "small" }, "테스트 NFT 발행");
+  mint.addEventListener("click", () => on.mint());
+
+  const token = /** @type {HTMLSelectElement} */ (
+    el("select", { name: "token" }, s.tokens.map((id) => el("option", { value: id.toString() }, `토큰 ${id}번`)))
+  );
+  if (s.tokens.some((id) => id.toString() === s.selected)) token.value = s.selected;
+  const bidding = /** @type {HTMLInputElement} */ (el("input", { name: "bidding", type: "text", value: "10m", required: "" }));
+  const reveal = /** @type {HTMLInputElement} */ (el("input", { name: "reveal", type: "text", value: "1d", required: "" }));
+  const submit = el("button", { type: "submit" }, "경매 만들기 (승인 후 생성)");
+  if (s.tokens.length === 0) {
+    token.setAttribute("disabled", "");
+    submit.setAttribute("disabled", "");
+  }
+  const form = /** @type {HTMLFormElement} */ (
+    el(
+      "form",
+      { class: "action-form", autocomplete: "off" },
+      el("label", {}, "NFT ", token),
+      el("label", {}, "입찰 기간 ", bidding),
+      el("label", {}, "공개 기간 ", reveal),
+      submit,
+      el(
+        "p",
+        { class: "hint" },
+        s.tokens.length === 0
+          ? "이 계정이 가진 NFT가 없습니다. 먼저 테스트 NFT를 발행하세요."
+          : "입찰 기간은 10m~5d, 공개 기간은 1d~2d (s, m, h, d). NFT는 경매 컨트랙트가 보관하므로 먼저 승인(approve)을 보내고 경매를 만듭니다.",
+      ),
+    )
+  );
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    on.create(token.value, bidding.value, reveal.value);
+  });
+  return el("section", { class: "panel" }, el("h2", {}, "새 경매 만들기 ", mint), form);
 }
