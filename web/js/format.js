@@ -185,7 +185,7 @@ export function parseAddress(input) {
 }
 
 /**
- * "#/", "#/?status=active", "#/auctions/3", "#/users/0x…" → a route object. Unknown → list.
+ * "#/auctions", "#/auctions?status=active", "#/auctions/3", "#/users/0x…" → a route object. "#/" and unknown → list.
  * @param {string} hash
  * @returns {{ name: "list", status: "" | "active" | "finalized" } | { name: "auction", id: string } | { name: "user", address: string }}
  */
@@ -195,6 +195,6 @@ export function parseRoute(hash) {
   if (m) return { name: "auction", id: /** @type {string} */ (m[1]) };
   m = /^\/users\/(0x[0-9a-fA-F]{40})$/.exec(path);
   if (m) return { name: "user", address: /** @type {string} */ (m[1]).toLowerCase() };
-  const status = /^\/\?status=(active|finalized)$/.exec(path)?.[1];
+  const status = /^\/auctions\?status=(active|finalized)$/.exec(path)?.[1];
   return { name: "list", status: /** @type {"" | "active" | "finalized"} */ (status ?? "") };
 }

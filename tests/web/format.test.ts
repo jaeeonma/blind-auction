@@ -92,14 +92,15 @@ describe("web: format helpers", () => {
   it("parses the hash routes and falls back to the list", () => {
     expect(parseRoute("")).toEqual({ name: "list", status: "" });
     expect(parseRoute("#/")).toEqual({ name: "list", status: "" });
-    expect(parseRoute("#/?status=active")).toEqual({ name: "list", status: "active" });
-    expect(parseRoute("#/?status=finalized")).toEqual({ name: "list", status: "finalized" });
+    expect(parseRoute("#/auctions")).toEqual({ name: "list", status: "" });
+    expect(parseRoute("#/auctions?status=active")).toEqual({ name: "list", status: "active" });
+    expect(parseRoute("#/auctions?status=finalized")).toEqual({ name: "list", status: "finalized" });
     expect(parseRoute("#/auctions/12")).toEqual({ name: "auction", id: "12" });
     expect(parseRoute("#/users/0xABCDEFabcdef0123456789ABCDEFabcdef012345")).toEqual({
       name: "user",
       address: "0xabcdefabcdef0123456789abcdefabcdef012345",
     });
-    for (const odd of ["#/auctions/abc", "#/users/0x12", "#/?status=ended", "#/nope"]) {
+    for (const odd of ["#/auctions/abc", "#/users/0x12", "#/auctions?status=ended", "#/?status=active", "#/nope"]) {
       expect(parseRoute(odd)).toEqual({ name: "list", status: "" });
     }
   });
