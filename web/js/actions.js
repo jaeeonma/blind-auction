@@ -355,13 +355,15 @@ export async function auctionEnds(chain, auctionId) {
 /**
  * Adds saved bids from files: a script's secret file (one bid) or this page's export (a list).
  * Each bid must belong to this node's contract and its value + secret must give its commitment.
- * An entry already in the browser is never overwritten (it may be the secret of the bid on chain).
+ * An entry already in the browser is kept when it matches the bid on chain (it is the secret of that
+ * bid). One that does not match (e.g. from before the node restarted, when the same contract address
+ * comes back with new auctions) or cannot be read is replaced.
  * @param {Chain} chain
  * @param {import("./secrets.js").SecretStore} store
  * @param {Array<{ name: string, text: string }>} files
- * @returns {{ added: string[], skipped: string[] }} human-readable lines
+ * @returns {Promise<{ added: string[], skipped: string[] }>} human-readable lines
  */
-export function importBids(chain, store, files) {
+export async function importBids(chain, store, files) {
   /** @type {string[]} */
   const added = [];
   /** @type {string[]} */
@@ -388,7 +390,12 @@ export function importBids(chain, store, files) {
         continue;
       }
       if (store.has(key)) {
-        skipped.push(`${label}: 이 브라우저에 다른 값이 저장되어 있어 덮어쓰지 않았습니다`);
+        if (existing && (await matchesChain(chain, existing))) {
+          skipped.push(`${label}: 이 브라우저에 체인의 입찰과 맞는 값이 있어 덮어쓰지 않았습니다`);
+          continue;
+        }
+        store.save(bid);
+        added.push(`${label}: 이 브라우저의 예전 값이 체인의 해시와 맞지 않아 바꿨습니다 (입찰자 ${bid.bidder})`);
         continue;
       }
       store.save(bid);
@@ -417,6 +424,27 @@ function checkImported(chain, bid) {
     return "입찰가, secret, 입찰자 주소를 읽을 수 없습니다 (손상된 파일)";
   }
   return "";
+}
+
+/**
+ * Whether a saved bid gives the commitment of its bidder's bid on chain.
+ * @param {Chain} chain
+ * @param {import("./secrets.js").SavedBid} saved
+ */
+async function matchesChain(chain, saved) {
+  let onChain;
+  try {
+    onChain = await findBid(chain, BigInt(saved.auctionId), saved.bidder);
+  } catch (err) {
+    if (revertName(err) === "AuctionNotFound") return false;
+    throw err;
+  }
+  if (!onChain) return false;
+  try {
+    return computeCommitment(BigInt(saved.value), saved.secret, saved.bidder) === onChain.commitment;
+  } catch {
+    return false; // unreadable value, secret or address
+  }
 }
 
 /**

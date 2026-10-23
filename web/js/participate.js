@@ -348,7 +348,7 @@ export class Participation {
     const files = await Promise.all([...(input.files ?? [])].map(async (f) => ({ name: f.name, text: await f.text() })));
     input.value = "";
     try {
-      const r = importBids(this.chain, this.store, files);
+      const r = await importBids(this.chain, this.store, files);
       const lines = [`가져오기: ${r.added.length}건 추가`, ...r.added, ...r.skipped.map((x) => `건너뜀 - ${x}`)];
       this.show(r.skipped.length && !r.added.length ? "error" : "ok", lines.join(" / "));
     } catch (err) {
