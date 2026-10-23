@@ -89,9 +89,9 @@ describe("web: format helpers", () => {
     }
   });
 
-  it("parses the hash routes and falls back to the list", () => {
-    expect(parseRoute("")).toEqual({ name: "list", status: "" });
-    expect(parseRoute("#/")).toEqual({ name: "list", status: "" });
+  it("parses the hash routes and falls back to 경매 진행 (the first screen)", () => {
+    expect(parseRoute("")).toEqual({ name: "stage" });
+    expect(parseRoute("#/")).toEqual({ name: "stage" });
     expect(parseRoute("#/auctions")).toEqual({ name: "list", status: "" });
     expect(parseRoute("#/auctions?status=active")).toEqual({ name: "list", status: "active" });
     expect(parseRoute("#/auctions?status=finalized")).toEqual({ name: "list", status: "finalized" });
@@ -101,7 +101,7 @@ describe("web: format helpers", () => {
       address: "0xabcdefabcdef0123456789abcdefabcdef012345",
     });
     for (const odd of ["#/auctions/abc", "#/users/0x12", "#/auctions?status=ended", "#/?status=active", "#/nope"]) {
-      expect(parseRoute(odd)).toEqual({ name: "list", status: "" });
+      expect(parseRoute(odd)).toEqual({ name: "stage" });
     }
   });
 });

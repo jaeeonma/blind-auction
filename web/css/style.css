@@ -379,3 +379,123 @@ section table {
   color: var(--muted);
   font-size: 13px;
 }
+
+/* Menu (design.md 17번): 경매 진행 is the first screen, the read-only screens are one click away. */
+.menu {
+  display: flex;
+  gap: 4px;
+}
+.menu a {
+  padding: 4px 12px;
+  border-radius: 6px;
+  color: var(--text);
+  font-weight: 600;
+}
+.menu a.active {
+  background: var(--text);
+  color: #fff;
+  text-decoration: none;
+}
+
+/* 경매 진행 화면 (design.md 17번 B) */
+.stage-top {
+  padding: 14px 18px;
+  margin-bottom: 16px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.stage-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+.stage-head h1 {
+  margin: 0;
+}
+.small-link {
+  font-size: 14px;
+  font-weight: 400;
+}
+.guide {
+  margin: 10px 0 4px;
+  font-size: 17px;
+}
+.time-tools {
+  margin: 8px 0 0;
+}
+.cards {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+@media (max-width: 1000px) {
+  .cards {
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  }
+}
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.card h3 {
+  margin: 0;
+  font-size: 18px;
+}
+.card p {
+  margin: 0;
+}
+.card-action {
+  margin-top: auto;
+  padding-top: 8px;
+}
+.card .status {
+  font-size: 14px;
+  margin-bottom: 6px;
+}
+.bid-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.bid-form input {
+  font: inherit;
+  width: 5em;
+  padding: 2px 6px;
+}
+.action {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+/* Why a button is off (the user asked for this: an off button alone was confusing). */
+.why {
+  color: var(--muted);
+  font-size: 13px;
+}
+.hint {
+  color: var(--muted);
+  font-size: 13px;
+}
+.stage-tools {
+  margin: 12px 0;
+  font-size: 14px;
+}
+.stage-bottom {
+  margin-top: 8px;
+}
+button.primary {
+  padding: 8px 18px;
+  font-size: 15px;
+  font-weight: 600;
+  background: var(--good);
+  border-color: var(--good);
+}

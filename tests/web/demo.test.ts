@@ -104,6 +104,10 @@ describe("web: 경매 진행 화면 (pure)", () => {
     expect(cardFor(person(0, { pending: eth("7") }), stage("finalized")).action).toEqual({ kind: "withdraw", label: "출금", reason: "" });
     expect(cardFor(person(2), stage("finalized")).action?.reason).toBe("장부에 받을 돈이 없습니다");
     expect(cardFor(person(1), stage("none")).action).toBeNull();
+    // An unrevealed bid is shown as forfeited (design.md 4번 Q4), the revealed one as revealed.
+    expect(cardFor(person(4, { bid: bidOf("3") }), stage("awaiting_finalize")).status).toBe("공개하지 않음 · 보증금 3 ETH는 종료하면 판매자에게 몰수");
+    expect(cardFor(person(4, { bid: bidOf("3") }), stage("finalized")).status).toBe("공개하지 않아 보증금 3 ETH 몰수");
+    expect(cardFor(person(1, { bid: bidOf("5", true) }), stage("finalized")).status).toBe("공개함 · 보증금 5 ETH");
   });
 });
 

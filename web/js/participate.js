@@ -22,6 +22,7 @@ import {
 import { el, replace } from "./dom.js";
 import { formatEth, formatEthShort, formatTime, shortAddress } from "./format.js";
 import { auctionPanel, createPanel, localOnlyTag } from "./panels.js";
+import { startAuction } from "./demo.js";
 import { browserStore } from "./secrets.js";
 
 const ACCOUNT_KEY = "blind-auction:account";
@@ -54,8 +55,27 @@ export class Participation {
     this.busy = false;
     /** @type {HTMLElement | null} */
     this.infoBox = null;
-    /** Set when ?rpc= was refused; stays in the account bar. @type {HTMLElement | null} */
-    this.rpcWarning = null;
+    /** Set when ?rpc= was refused; stays on screen. */
+    this.rpcWarning = "";
+    /** Why participation is not available (no node, wrong deployment record); empty when connected. */
+    this.problem = "";
+    /** True until init() has finished (connected or failed). */
+    this.connecting = true;
+  }
+
+  rpcWarningNodes() {
+    return this.rpcWarning ? [el("span", { class: "warn" }, this.rpcWarning)] : [];
+  }
+
+  /** Downloads every bid saved in this browser as JSON (a backup of the secrets, design.md 17번). */
+  exportBids() {
+    if (!this.store) return;
+    const count = this.store.list().length;
+    const url = URL.createObjectURL(new Blob([this.store.exportJson()], { type: "application/json" }));
+    const a = el("a", { href: url, download: `blind-auction-bids-${new Date().toISOString().slice(0, 10)}.json` });
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    this.show("ok", `저장된 입찰 ${count}건을 내보냈습니다. 파일에는 secret이 들어 있으니 다른 사람과 공유하지 마세요.`);
   }
 
   /** Connects to the node. Read-only screens keep working when this fails. */
@@ -67,11 +87,7 @@ export class Participation {
       const rpc = rpcUrlFrom(location.search);
       if (rpc.rejected !== null) {
         // Shown before connecting, so it is there even when the default node is not running.
-        this.rpcWarning = el(
-          "span",
-          { class: "warn", title: rpc.rejected },
-          `?rpc= 주소는 쓰지 않음 (기본 노드 ${DEFAULT_RPC_URL} 사용)`,
-        );
+        this.rpcWarning = `?rpc= 주소는 쓰지 않음 (기본 노드 ${DEFAULT_RPC_URL} 사용)`;
         this.show(
           "error",
           `화면 주소의 ?rpc=는 이 컴퓨터의 노드(${LOCAL_RPC_HOSTS.join(", ")})만 쓸 수 있어서, 받은 주소 대신 기본 노드(${DEFAULT_RPC_URL})를 씁니다. ` +
@@ -84,7 +100,11 @@ export class Participation {
       this.renderAccountBar();
     } catch (err) {
       this.chain = null;
-      replace(this.accountBox, el("span", { class: "muted" }, `참여 기능을 쓸 수 없습니다: ${errorMessage(err)}`), ...(this.rpcWarning ? [this.rpcWarning] : []));
+      this.problem = `참여 기능을 쓸 수 없습니다: ${errorMessage(err)}`;
+      replace(this.accountBox, el("span", { class: "muted" }, this.problem), ...this.rpcWarningNodes());
+    } finally {
+      this.connecting = false;
+      this.onTransaction(); // draw the screen with the connection result now
     }
   }
 
@@ -199,10 +219,13 @@ export class Participation {
     });
   }
 
-  /** @param {bigint} auctionId */
-  finalize(auctionId) {
+  /**
+   * @param {bigint} auctionId
+   * @param {number} [index] account that sends it (anyone may finalize)
+   */
+  finalize(auctionId, index = this.accountIndex) {
     return this.run("경매 종료", async () => {
-      const r = await finalizeAuction(/** @type {Chain} */ (this.chain), await this.signer(), auctionId);
+      const r = await finalizeAuction(/** @type {Chain} */ (this.chain), await this.signerOf(index), auctionId);
       return {
         blockNumber: r.blockNumber,
         message: r.winner
@@ -227,13 +250,14 @@ export class Participation {
    * @param {bigint} auctionId
    * @param {string} valueInput ETH
    * @param {string} depositInput ETH
+   * @param {number} [index] account that bids
    */
-  bid(auctionId, valueInput, depositInput) {
+  bid(auctionId, valueInput, depositInput, index = this.accountIndex) {
     return this.run("입찰", async () => {
       const value = parseEthAmount(valueInput);
       const deposit = parseEthAmount(depositInput);
       if (!this.store) throw new Error("이 브라우저는 저장소를 쓸 수 없어서 입찰할 수 없습니다");
-      const r = await placeBid(/** @type {Chain} */ (this.chain), await this.signer(), this.store, auctionId, value, deposit);
+      const r = await placeBid(/** @type {Chain} */ (this.chain), await this.signerOf(index), this.store, auctionId, value, deposit);
       return {
         blockNumber: r.blockNumber,
         warnings: [...r.warnings, ...(r.replaced ? ["이전에 보내지 못한 입찰의 저장값을 새 secret으로 바꿨습니다."] : [])],
@@ -242,11 +266,14 @@ export class Participation {
     });
   }
 
-  /** @param {bigint} auctionId */
-  reveal(auctionId) {
+  /**
+   * @param {bigint} auctionId
+   * @param {number} [index] account that reveals
+   */
+  reveal(auctionId, index = this.accountIndex) {
     return this.run("공개", async () => {
       if (!this.store) throw new Error("이 브라우저는 저장소를 쓸 수 없습니다");
-      const r = await revealFromStore(/** @type {Chain} */ (this.chain), await this.signer(), this.store, auctionId);
+      const r = await revealFromStore(/** @type {Chain} */ (this.chain), await this.signerOf(index), this.store, auctionId);
       return {
         blockNumber: r.blockNumber,
         message: `경매 ${auctionId}번 입찰을 공개했습니다: ${r.valid ? "유효" : "무효 (보증금 전액을 장부에 적음)"}, 입찰가 ${formatEth(r.value.toString())}`,
@@ -260,8 +287,41 @@ export class Participation {
 
   /** @returns {Promise<import("ethers").JsonRpcSigner>} */
   signer() {
+    return this.signerOf(this.accountIndex);
+  }
+
+  /**
+   * A test account of the local node, by number (the node signs; no wallet, design.md 17번).
+   * @param {number} index
+   * @returns {Promise<import("ethers").JsonRpcSigner>}
+   */
+  signerOf(index) {
     if (!this.chain) throw new Error("노드에 연결되지 않았습니다");
-    return this.chain.provider.getSigner(this.accountIndex);
+    return this.chain.provider.getSigner(index);
+  }
+
+  /**
+   * 출금 of one account's whole ledger.
+   * @param {number} index
+   */
+  withdraw(index) {
+    return this.run("출금", async () => {
+      const r = await withdrawAll(/** @type {Chain} */ (this.chain), await this.signerOf(index));
+      return { blockNumber: r.blockNumber, message: `출금했습니다 (계정 ${index}번): ${formatEth(r.amount.toString())}` };
+    });
+  }
+
+  /** "새 경매 시작": the seller (account 0) puts up a test NFT, minting one if needed (demo.js). */
+  startAuction() {
+    return this.run("새 경매 시작", async () => {
+      const r = await startAuction(/** @type {Chain} */ (this.chain), await this.signerOf(0));
+      return {
+        blockNumber: r.blockNumber,
+        message:
+          `경매 ${r.auctionId}번을 시작했습니다 (토큰 ${r.tokenId}번${r.minted ? " 발행" : ""}, 승인 후 생성). ` +
+          `입찰 마감 ${formatTime(Number(r.biddingEnd))}, 공개 마감 ${formatTime(Number(r.revealEnd))}`,
+      };
+    });
   }
 
   renderAccountBar() {
@@ -282,7 +342,7 @@ export class Participation {
       this.onTransaction(); // panels depend on the account
     });
     this.infoBox = el("span", { class: "account-info" });
-    replace(this.accountBox, el("label", {}, "계정 ", select), localOnlyTag(), this.infoBox, ...(this.rpcWarning ? [this.rpcWarning] : []));
+    replace(this.accountBox, el("label", {}, "계정 ", select), localOnlyTag(), this.infoBox, ...this.rpcWarningNodes());
     void this.refreshAccount();
   }
 
@@ -296,7 +356,7 @@ export class Participation {
     withdraw.addEventListener("click", () =>
       void this.run("출금", async () => {
         const r = await withdrawAll(/** @type {Chain} */ (this.chain), await this.signer());
-        return { blockNumber: r.blockNumber, message: `출금했습니다: ${formatEth(r.amount.toString())}` };
+        return { blockNumber: r.blockNumber, message: `출금했습니다 (계정 ${this.accountIndex}번): ${formatEth(r.amount.toString())}` };
       }),
     );
     replace(
@@ -365,7 +425,10 @@ export class Participation {
    * @returns {Promise<boolean>} true when it succeeded
    */
   async run(label, action) {
-    if (this.busy) return false;
+    if (this.busy) {
+      this.show("error", `${label}: 다른 트랜잭션을 보내는 중입니다. 끝난 뒤 다시 누르세요.`);
+      return false;
+    }
     this.busy = true;
     this.show("busy", `${label}: 트랜잭션을 보내는 중…`);
     try {

@@ -185,16 +185,19 @@ export function parseAddress(input) {
 }
 
 /**
- * "#/auctions", "#/auctions?status=active", "#/auctions/3", "#/users/0x…" → a route object. "#/" and unknown → list.
+ * "#/" (경매 진행), "#/auctions", "#/auctions?status=active", "#/auctions/3", "#/users/0x…" → a route
+ * object. Unknown → 경매 진행, the first screen.
  * @param {string} hash
- * @returns {{ name: "list", status: "" | "active" | "finalized" } | { name: "auction", id: string } | { name: "user", address: string }}
+ * @returns {{ name: "stage" } | { name: "list", status: "" | "active" | "finalized" } | { name: "auction", id: string } | { name: "user", address: string }}
  */
 export function parseRoute(hash) {
   const path = hash.replace(/^#/, "") || "/";
+  if (path === "/auctions") return { name: "list", status: "" };
   let m = /^\/auctions\/(\d{1,78})$/.exec(path);
   if (m) return { name: "auction", id: /** @type {string} */ (m[1]) };
   m = /^\/users\/(0x[0-9a-fA-F]{40})$/.exec(path);
   if (m) return { name: "user", address: /** @type {string} */ (m[1]).toLowerCase() };
   const status = /^\/auctions\?status=(active|finalized)$/.exec(path)?.[1];
-  return { name: "list", status: /** @type {"" | "active" | "finalized"} */ (status ?? "") };
+  if (status) return { name: "list", status: /** @type {"active" | "finalized"} */ (status) };
+  return { name: "stage" };
 }

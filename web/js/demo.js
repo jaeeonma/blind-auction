@@ -151,10 +151,13 @@ export function cardFor(p, s) {
     }
   }
 
-  const status = !p.bid
-    ? "입찰하지 않음"
-    : `${p.bid.revealed ? "공개함" : "입찰함"} · 보증금 ${formatEth(p.bid.deposit.toString())}` +
-      (p.saved && !p.bid.revealed ? ` · 이 브라우저에 저장된 입찰가 ${formatEth(p.saved.value)}` : "");
+  const deposit = p.bid ? formatEth(p.bid.deposit.toString()) : "";
+  let status;
+  if (!p.bid) status = "입찰하지 않음";
+  else if (p.bid.revealed) status = `공개함 · 보증금 ${deposit}`;
+  else if (s.phase === "awaiting_finalize") status = `공개하지 않음 · 보증금 ${deposit}는 종료하면 판매자에게 몰수`;
+  else if (s.phase === "finalized") status = `공개하지 않아 보증금 ${deposit} 몰수`;
+  else status = `입찰함 · 보증금 ${deposit}` + (p.saved ? ` · 이 브라우저에 저장된 입찰가 ${formatEth(p.saved.value)}` : "");
   switch (s.phase) {
     case "bidding": {
       let reason = "";
