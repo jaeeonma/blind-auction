@@ -67,7 +67,7 @@ export function auctionList(data, status) {
     "nav",
     { class: "tabs" },
     FILTERS.map(([value, label]) =>
-      el("a", { href: value ? `#/?status=${value}` : "#/", class: value === status ? "tab active" : "tab" }, label),
+      el("a", { href: value ? `#/auctions?status=${value}` : "#/auctions", class: value === status ? "tab active" : "tab" }, label),
     ),
   );
   if (data.auctions.length === 0) {
@@ -101,7 +101,7 @@ export function auctionList(data, status) {
  * The four phases with the current one highlighted.
  * @param {string} status
  */
-function phaseSteps(status) {
+export function phaseSteps(status) {
   const current = PHASES.indexOf(status);
   return el(
     "ol",
@@ -133,12 +133,25 @@ export function auctionDetail(data) {
     el("dd", {}, step.remaining ? `${step.label} ${step.remaining}` : step.label),
   );
 
-  let result;
-  if (!a.result) result = el("p", { class: "muted" }, "아직 종료되지 않았습니다. 종료되면 낙찰자와 정산 결과가 여기에 나옵니다.");
-  else if (!a.result.winner)
-    result = el("p", {}, "유효 입찰이 없어 NFT는 판매자에게 돌아갔습니다. 몰수금: ", el("strong", {}, formatEth(a.result.forfeited)));
-  else
-    result = el(
+  return [
+    el("p", { class: "crumb" }, el("a", { href: "#/auctions" }, "← 경매 목록")),
+    el("h1", {}, `경매 ${a.auctionId}번 `, statusBadge(a.status)),
+    phaseSteps(a.status),
+    el("section", {}, el("h2", {}, "경매 정보"), info),
+    el("section", {}, el("h2", {}, "결과"), resultBlock(a)),
+    el("section", {}, el("h2", {}, `입찰 (${a.bids.length})`), bidsTable(a)),
+  ];
+}
+
+/**
+ * 결과 (winner, winning bid, forfeited). Shared by the detail and the 경매 진행 screen.
+ * @param {Auction} a
+ */
+export function resultBlock(a) {
+  if (!a.result) return el("p", { class: "muted" }, "아직 종료되지 않았습니다. 종료되면 낙찰자와 정산 결과가 여기에 나옵니다.");
+  if (!a.result.winner)
+    return el("p", {}, "유효 입찰이 없어 NFT는 판매자에게 돌아갔습니다. 몰수금: ", el("strong", {}, formatEth(a.result.forfeited)));
+  return el(
       "dl",
       { class: "info" },
       el("dt", {}, "낙찰자"),
@@ -148,40 +161,36 @@ export function auctionDetail(data) {
       el("dt", {}, "몰수금"),
       el("dd", {}, `${formatEth(a.result.forfeited)} (공개하지 않은 입찰의 보증금, 판매자 몫)`),
     );
+}
 
-  const bids =
-    a.bids.length === 0
-      ? el("p", { class: "empty" }, "아직 입찰이 없습니다.")
-      : el(
-          "table",
+/**
+ * 입찰 목록 (the value stays "비공개" until revealed). Shared by the detail and the 경매 진행 screen.
+ * @param {Auction & { bids: Bid[] }} a
+ */
+export function bidsTable(a) {
+  return a.bids.length === 0
+    ? el("p", { class: "empty" }, "아직 입찰이 없습니다.")
+    : el(
+        "table",
+        {},
+        el("thead", {}, el("tr", {}, ["입찰자", "보증금", "공개", "입찰가", "결과", "해시"].map((h) => el("th", {}, h)))),
+        el(
+          "tbody",
           {},
-          el("thead", {}, el("tr", {}, ["입찰자", "보증금", "공개", "입찰가", "결과", "해시"].map((h) => el("th", {}, h)))),
-          el(
-            "tbody",
-            {},
-            a.bids.map((b) =>
-              el(
-                "tr",
-                {},
-                el("td", {}, addressLink(b.bidder)),
-                el("td", { class: "num" }, formatEth(b.deposit)),
-                el("td", {}, b.revealed ? "공개함" : "-"),
-                el("td", { class: "num" }, b.value === null ? el("span", { class: "muted" }, "비공개") : formatEth(b.value)),
-                el("td", {}, resultBadge(b.result, a.status)),
-                el("td", { class: "mono muted", title: b.commitment }, shortAddress(b.commitment)),
-              ),
+          a.bids.map((b) =>
+            el(
+              "tr",
+              {},
+              el("td", {}, addressLink(b.bidder)),
+              el("td", { class: "num" }, formatEth(b.deposit)),
+              el("td", {}, b.revealed ? "공개함" : "-"),
+              el("td", { class: "num" }, b.value === null ? el("span", { class: "muted" }, "비공개") : formatEth(b.value)),
+              el("td", {}, resultBadge(b.result, a.status)),
+              el("td", { class: "mono muted", title: b.commitment }, shortAddress(b.commitment)),
             ),
           ),
-        );
-
-  return [
-    el("p", { class: "crumb" }, el("a", { href: "#/" }, "← 경매 목록")),
-    el("h1", {}, `경매 ${a.auctionId}번 `, statusBadge(a.status)),
-    phaseSteps(a.status),
-    el("section", {}, el("h2", {}, "경매 정보"), info),
-    el("section", {}, el("h2", {}, "결과"), result),
-    el("section", {}, el("h2", {}, `입찰 (${a.bids.length})`), bids),
-  ];
+        ),
+      );
 }
 
 /**
@@ -190,7 +199,7 @@ export function auctionDetail(data) {
  */
 export function userAuctions(data) {
   const header = [
-    el("p", { class: "crumb" }, el("a", { href: "#/" }, "← 경매 목록")),
+    el("p", { class: "crumb" }, el("a", { href: "#/auctions" }, "← 경매 목록")),
     el("h1", {}, "참여한 경매"),
     el("p", { class: "mono" }, data.address),
   ];

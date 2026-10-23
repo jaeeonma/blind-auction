@@ -13,6 +13,10 @@
   <body>
     <header class="top">
       <a class="brand" href="#/">Blind Auction</a>
+      <nav id="menu" class="menu">
+        <a href="#/" data-route="stage">경매 진행</a>
+        <a href="#/auctions" data-route="list">경매 목록</a>
+      </nav>
       <span class="tag">시연용 화면 · 로컬 Hardhat 노드</span>
       <form id="search" class="search" autocomplete="off">
         <input id="search-input" type="text" placeholder="참여한 경매 찾기: 지갑 주소 0x…" spellcheck="false" />
@@ -20,9 +24,7 @@
       </form>
       <div id="asof" class="asof" aria-live="polite">불러오는 중…</div>
     </header>
-    <div id="account" class="account-bar">노드에 연결하는 중…</div>
     <div id="notice" class="notice-area" aria-live="polite"></div>
-    <div id="panel" class="panel-area"></div>
     <main id="main"></main>
     <footer class="foot">
       진행 상태는 서버 시계가 아니라 Indexer가 마지막으로 읽은 블록의 시간으로 계산합니다 (3초마다 새로고침).
