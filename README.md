@@ -310,11 +310,12 @@ BlindAuction에서 빠진 분기 하나는 `finalize`의 재진입 잠금(`nonRe
 | 노드 연결이 끊김 | DB에 아무것도 쓰지 않고 재시도를 반복한다 | 노드를 다시 띄운다 | Indexer (노드 끊김) |
 | API가 꺼짐 | Indexer와 무관하다 | `npm run api` | - |
 | DB가 블록체인과 다르다고 의심됨 | - | Indexer를 멈추고 `npm run indexer:reset` → Indexer 다시 실행. 책갈피와 테이블을 비우고 배포 블록부터 다시 만든다 | 시스템 3-b |
-| 로컬 노드를 다시 켬 (체인이 처음부터 시작) | - | Indexer를 멈추고 `npm run deploy` → `.env` 갱신 → `npm run indexer:reset` → Indexer 다시 실행 | - |
+| 로컬 노드를 다시 켬 (체인이 처음부터 시작) | 아래 절차를 빠뜨리면 Indexer가 시작할 때 감지하고 할 일을 알려 준 뒤 멈춘다. 스크립트도 배포 기록의 주소에 컨트랙트가 없으면 `deploy`를 먼저 하라고 안내한다 | Indexer를 멈추고 `npm run deploy` → `.env` 갱신 → `npm run indexer:reset` → Indexer 다시 실행 | Indexer (시작 확인), 스크립트 (배포 주소 확인) |
+| `CONTRACT_ADDRESS`·`DEPLOY_BLOCK`이 틀림 | Indexer가 시작할 때 멈추고 원인과 할 일을 알려 준다. `DEPLOY_BLOCK`이 늦으면 실제 배포 블록도 알려 준다 | 알려 준 대로 `.env`를 고치고, 저장된 데이터가 있으면 `npm run indexer:reset` 후 다시 실행 | Indexer (시작 확인), 시스템 4 |
 
 **복구 명령이 책갈피만이 아니라 테이블까지 비우는 이유:** 책갈피만 되돌리면 빠진 행은 채워지지만, 이미 있는데 값이 틀린 행은 UNIQUE 때문에 건너뛰어 그대로 남는다. 시스템 테스트 3-b가 이것을 보여 준다.
 
-**멈춤을 알아채는 방법:** API 응답의 `asOf.blockNumber`가 체인의 최신 블록보다 계속 뒤처져 있으면 Indexer가 멈춘 것이다. 개발용 노드는 5초마다 블록을 만들므로 정상이면 `asOf`가 계속 앞으로 간다. 로컬 노드 재시작은 자동으로 감지하지 않는다 (design.md 16번: 로컬 기준이라 reorg 등을 다루지 않음).
+**멈춤을 알아채는 방법:** API 응답의 `asOf.blockNumber`가 체인의 최신 블록보다 계속 뒤처져 있으면 Indexer가 멈춘 것이다. 개발용 노드는 5초마다 블록을 만들므로 정상이면 `asOf`가 계속 앞으로 간다. Indexer는 시작할 때 노드 재시작과 설정 오류를 확인한다 (design.md 9번). 다만 노드를 다시 켠 뒤 새 체인의 블록 수가 예전 책갈피를 넘은 상태에서 켜면 감지하지 못한다. 블록 해시를 저장해 비교하면 막을 수 있지만 만들지 않았다 (design.md 16번).
 
 ## 6. 보안
 
