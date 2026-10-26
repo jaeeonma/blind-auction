@@ -221,17 +221,20 @@ export async function mintNft(chain, signer) {
 }
 
 /**
- * Test NFTs `address` owns now (MockNFT numbers tokens from 0, so a local demo can just ask each one).
+ * Test NFTs `address` owns now. MockNFT numbers tokens from 1 (nextTokenId starts at 1), so a local
+ * demo can just ask each of 1 .. nextTokenId − 1.
  * @param {Chain} chain
  * @param {string} address
  * @returns {Promise<bigint[]>}
  */
 export async function ownedTokens(chain, address) {
   const next = Number(await chain.nft.getFunction("nextTokenId")());
-  const owners = await Promise.all(
-    Array.from({ length: next }, (_, i) => chain.nft.getFunction("ownerOf")(i).catch(() => null)),
-  );
-  return owners.flatMap((owner, i) => (owner && owner.toLowerCase() === address.toLowerCase() ? [BigInt(i)] : []));
+  const ids = Array.from({ length: Math.max(next - 1, 0) }, (_, i) => i + 1);
+  const owners = await Promise.all(ids.map((id) => chain.nft.getFunction("ownerOf")(id).catch(() => null)));
+  return ids.flatMap((id, i) => {
+    const owner = owners[i];
+    return owner && owner.toLowerCase() === address.toLowerCase() ? [BigInt(id)] : [];
+  });
 }
 
 /**
