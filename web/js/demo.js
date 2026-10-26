@@ -1,8 +1,10 @@
 // 경매 진행 화면 (design.md 17번 B): the roles of the design.md 7번 example, what to do next, which
 // button each card shows and why it is off, and the state of the current auction for the five demo
 // accounts. No DOM here, so it runs in the Node tests like actions.js. Transactions stay in actions.js.
+import { Contract } from "ethers";
 import { createAuction, findBid, keyFor, mintNft, ownedTokens, pendingOf, phaseOf } from "./actions.js";
-import { formatEth } from "./format.js";
+import { NFT_ABI } from "./chain.js";
+import { formatEth, shortAddress } from "./format.js";
 
 /** @typedef {import("./chain.js").Chain} Chain */
 
@@ -34,7 +36,9 @@ export const DEMO_REVEAL_SECONDS = 86400n;
  *   saved: import("./secrets.js").SavedBid | null,
  *   savedError: string,
  * }} Person
- * @typedef {{ auctionId: bigint | null, phase: string, storeAvailable: boolean, people: Person[] }} Stage
+ * @typedef {{ contract: string, tokenId: bigint, owner: string }} AuctionNft
+ *   the auctioned NFT and its owner right now (ownerOf on the NFT contract)
+ * @typedef {{ auctionId: bigint | null, phase: string, storeAvailable: boolean, people: Person[], nft: AuctionNft | null }} Stage
  *   phase: "none" when there is no auction yet, otherwise the contract's phase (bidding, revealing, ...)
  */
 
@@ -79,7 +83,42 @@ export async function loadStage(chain, store, addresses) {
       return { role, address, balance, pending, bid, saved, savedError };
     }),
   );
-  return { auctionId, phase, storeAvailable: store !== null, people };
+  const nft = auctionId === null ? null : await auctionNft(chain, auctionId);
+  return { auctionId, phase, storeAvailable: store !== null, people, nft };
+}
+
+/**
+ * Who holds the auctioned NFT now, read from the chain like the ledgers (not from the API): the
+ * auction contract while the auction runs, the winner or the seller after finalize (design.md 4번).
+ * @param {Chain} chain
+ * @param {bigint} auctionId
+ * @returns {Promise<AuctionNft>}
+ */
+export async function auctionNft(chain, auctionId) {
+  const a = await chain.auction.getFunction("getAuction")(auctionId);
+  const contract = /** @type {string} */ (a.nft);
+  const tokenId = /** @type {bigint} */ (a.tokenId);
+  // The demo creates auctions of the deployed MockNFT; an auction made by script with another ERC-721
+  // is read through that contract.
+  const nftContract =
+    contract.toLowerCase() === chain.deployment.mockNft.toLowerCase() ? chain.nft : new Contract(contract, NFT_ABI, chain.provider);
+  const owner = /** @type {string} */ (await nftContract.getFunction("ownerOf")(tokenId));
+  return { contract, tokenId, owner };
+}
+
+/**
+ * The NFT owner by name instead of address (design.md 17번): the auction contract, 판매자 (account 0),
+ * A~D (accounts 1~4), or a short address for anyone else.
+ * @param {string} owner
+ * @param {string} auctionContract
+ * @param {Person[]} people
+ */
+export function ownerName(owner, auctionContract, people) {
+  const o = owner.toLowerCase();
+  if (o === auctionContract.toLowerCase()) return "경매 컨트랙트 (보관 중)";
+  const person = people.find((p) => p.address.toLowerCase() === o);
+  if (person) return person.role.seller ? "판매자" : person.role.name;
+  return shortAddress(owner);
 }
 
 /**
