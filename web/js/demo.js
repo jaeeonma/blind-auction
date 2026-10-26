@@ -40,6 +40,7 @@ export const DEMO_REVEAL_SECONDS = 86400n;
  *   the auctioned NFT and its owner right now (ownerOf on the NFT contract)
  * @typedef {{ auctionId: bigint | null, phase: string, storeAvailable: boolean, people: Person[], nft: AuctionNft | null }} Stage
  *   phase: "none" when there is no auction yet, otherwise the contract's phase (bidding, revealing, ...)
+ *   nft: null when there is no auction or its NFT owner could not be read
  */
 
 /**
@@ -83,7 +84,9 @@ export async function loadStage(chain, store, addresses) {
       return { role, address, balance, pending, bid, saved, savedError };
     }),
   );
-  const nft = auctionId === null ? null : await auctionNft(chain, auctionId);
+  // The owner line is extra information: if it cannot be read (e.g. an NFT contract that reverts on
+  // ownerOf), leave it out instead of stopping the whole screen, cards included.
+  const nft = auctionId === null ? null : await auctionNft(chain, auctionId).catch(() => null);
   return { auctionId, phase, storeAvailable: store !== null, people, nft };
 }
 

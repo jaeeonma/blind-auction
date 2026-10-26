@@ -1,6 +1,7 @@
+import { Contract, Wallet } from "ethers";
 import { beforeEach, describe, expect, inject, it } from "vitest";
 import { mintNft, placeBid, revealFromStore, withdrawAll, finalizeAuction, moveTimeTo, auctionEnds } from "../../web/js/actions.js";
-import { connect, testAccounts, type Chain } from "../../web/js/chain.js";
+import { NFT_ABI, connect, testAccounts, type Chain } from "../../web/js/chain.js";
 import { ROLES, cardFor, currentAuctionId, guide, loadStage, ownerName, startAuction, type Person, type Stage } from "../../web/js/demo.js";
 import { SecretStore } from "../../web/js/secrets.js";
 import { deployContracts, eth, type Chain as TestChain } from "../helpers/chain.js";
@@ -235,6 +236,21 @@ describe("web: 경매 진행 화면 on the test node", () => {
     o = await owner();
     expect(o.nft!.owner.toLowerCase()).toBe(addresses[2]!.toLowerCase());
     expect(o.name).toBe("B");
+  });
+
+  it("when the NFT owner cannot be read, loadStage still succeeds with nft null (the cards keep updating)", async () => {
+    const signer = (i: number) => c.provider.getSigner(i);
+    const created = await startAuction(c, await signer(0));
+    await placeBid(c, await signer(1), store, created.auctionId, eth("3"), eth("5"));
+    // An NFT handle whose ownerOf fails: an address without a contract (the call cannot be decoded).
+    const broken: Chain = { ...c, nft: new Contract(Wallet.createRandom().address, NFT_ABI, c.provider) };
+    await expect(broken.nft.getFunction("ownerOf")(created.tokenId)).rejects.toThrow();
+
+    const s = await loadStage(broken, store, addresses);
+    expect(s.nft).toBeNull();
+    expect(s.phase).toBe("bidding");
+    expect(s.people[1]!.bid?.deposit).toBe(eth("5"));
+    expect(guide(s).text).toContain("(1/4명 입찰함)");
   });
 
   it("an auction finalized without a valid bid gives the NFT back to the seller", async () => {

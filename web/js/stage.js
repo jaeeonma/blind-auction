@@ -289,7 +289,10 @@ export class StageScreen {
    */
   showNftOwner(s) {
     const nft = s.nft;
-    if (!nft || !this.p.chain) return;
+    if (!nft || !this.p.chain) {
+      this.nftOwner.show("none", () => []); // not readable now: hide the line, keep the rest of the screen
+      return;
+    }
     const name = ownerName(nft.owner, this.p.chain.deployment.blindAuction, s.people);
     this.nftOwner.show(JSON.stringify([nft.contract, nft.tokenId.toString(), nft.owner]), () => [
       el(
