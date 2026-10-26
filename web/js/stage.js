@@ -3,7 +3,7 @@
 // the one button its phase allows (and why it is off). Bottom: bids and result as the API has them.
 // Each part is redrawn only when what it shows changed, so the bid inputs survive the 3 s refresh.
 import { ApiError, getAuction, listAuctions } from "./api.js";
-import { ROLES, cardFor, guide, loadStage } from "./demo.js";
+import { ROLES, cardFor, guide, loadStage, ownerName } from "./demo.js";
 import { el, replace } from "./dom.js";
 import { formatEth, formatEthShort, shortAddress } from "./format.js";
 import { bidsTable, phaseSteps, resultBlock } from "./views.js";
@@ -70,7 +70,11 @@ export class StageScreen {
       return { role, box, info, action, withdraw };
     });
     this.tools = new Part(el("p", { class: "stage-tools" }));
-    this.bottom = new Part(el("section", { class: "stage-bottom" }));
+    // Bottom: bids and result from the API; the NFT owner between them is read from the chain.
+    this.bids = new Part(el("div"));
+    this.nftOwner = new Part(el("div", { class: "nft-owner" }));
+    this.result = new Part(el("div"));
+    this.bottom = { box: el("section", { class: "stage-bottom" }, this.bids.box, el("h2", {}, "결과"), this.nftOwner.box, this.result.box) };
     this.cardsBox = el("div", { class: "cards" }, this.cards.map((c) => c.box));
     this.root = el("div", { class: "stage" }, this.top.box, this.cardsBox, this.tools.box, this.bottom.box);
     this.running = false;
@@ -254,26 +258,51 @@ export class StageScreen {
   async showBottom(s) {
     if (s.auctionId === null) {
       this.bottom.box.hidden = true;
-      this.bottom.show("none", () => []);
       return (await listAuctions("")).asOf;
     }
+    this.showNftOwner(s);
     try {
       const data = await getAuction(s.auctionId.toString());
       const a = data.auction;
-      this.bottom.show(JSON.stringify([a.auctionId, data.asOf.blockNumber]), () => [
+      const key = JSON.stringify([a.auctionId, data.asOf.blockNumber]);
+      this.bids.show(key, () => [
         el("h2", {}, `입찰 현황 (${a.bids.length}) `, el("span", { class: "muted" }, "· Indexer가 읽은 블록 기준, 공개 전 입찰가는 비공개")),
         bidsTable(a),
-        el("h2", {}, "결과"),
-        resultBlock(a),
       ]);
+      this.result.show(key, () => [resultBlock(a)]);
       return data.asOf;
     } catch (err) {
       if (!(err instanceof ApiError) || err.status !== 404) throw err;
-      this.bottom.show(`missing:${s.auctionId}`, () => [
+      this.bids.show(`missing:${s.auctionId}`, () => [
         el("h2", {}, "입찰 현황"),
         el("p", { class: "muted" }, "Indexer가 아직 이 경매를 읽지 않았습니다. 몇 초 뒤에 나옵니다."),
       ]);
+      this.result.show(`missing:${s.auctionId}`, () => []);
       return (await listAuctions("")).asOf;
     }
+  }
+
+  /**
+   * "NFT 현재 소유자" by name, read from the chain (ownerOf), so it changes with the phase: the auction
+   * contract while the auction runs, then the winner or the seller (design.md 17번).
+   * @param {Stage} s
+   */
+  showNftOwner(s) {
+    const nft = s.nft;
+    if (!nft || !this.p.chain) {
+      this.nftOwner.show("none", () => []); // not readable now: hide the line, keep the rest of the screen
+      return;
+    }
+    const name = ownerName(nft.owner, this.p.chain.deployment.blindAuction, s.people);
+    this.nftOwner.show(JSON.stringify([nft.contract, nft.tokenId.toString(), nft.owner]), () => [
+      el(
+        "p",
+        {},
+        `경매 대상 토큰 ${nft.tokenId}번 · NFT 현재 소유자: `,
+        el("strong", { title: nft.owner }, name),
+        " ",
+        el("span", { class: "muted" }, "(체인에서 바로 읽음)"),
+      ),
+    ]);
   }
 }

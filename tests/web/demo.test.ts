@@ -1,7 +1,8 @@
+import { Contract, Wallet } from "ethers";
 import { beforeEach, describe, expect, inject, it } from "vitest";
 import { mintNft, placeBid, revealFromStore, withdrawAll, finalizeAuction, moveTimeTo, auctionEnds } from "../../web/js/actions.js";
-import { connect, testAccounts, type Chain } from "../../web/js/chain.js";
-import { ROLES, cardFor, currentAuctionId, guide, loadStage, startAuction, type Person, type Stage } from "../../web/js/demo.js";
+import { NFT_ABI, connect, testAccounts, type Chain } from "../../web/js/chain.js";
+import { ROLES, cardFor, currentAuctionId, guide, loadStage, ownerName, startAuction, type Person, type Stage } from "../../web/js/demo.js";
 import { SecretStore } from "../../web/js/secrets.js";
 import { deployContracts, eth, type Chain as TestChain } from "../helpers/chain.js";
 
@@ -43,6 +44,7 @@ const stage = (phase: string, people: Person[] = ROLES.map((r) => person(r.index
   phase,
   storeAvailable,
   people,
+  nft: null,
 });
 const bidOf = (deposit: string, revealed = false) => ({ commitment: "0x" + "ab".repeat(32), deposit: eth(deposit), revealed });
 
@@ -112,6 +114,16 @@ describe("web: 경매 진행 화면 (pure)", () => {
     expect(cardFor(person(4, { bid: bidOf("3") }), stage("awaiting_finalize")).status).toBe("공개하지 않음 · 보증금 3 ETH는 종료하면 판매자에게 몰수");
     expect(cardFor(person(4, { bid: bidOf("3") }), stage("finalized")).status).toBe("공개하지 않아 보증금 3 ETH 몰수");
     expect(cardFor(person(1, { bid: bidOf("5", true) }), stage("finalized")).status).toBe("공개함 · 보증금 5 ETH");
+  });
+
+  it("names the NFT owner instead of showing the address", () => {
+    const people = ROLES.map((r) => person(r.index));
+    const auctionContract = "0x" + "ac".repeat(20);
+    expect(ownerName(auctionContract.toUpperCase().replace("0X", "0x"), auctionContract, people)).toBe("경매 컨트랙트 (보관 중)");
+    expect(ownerName(people[0]!.address, auctionContract, people)).toBe("판매자");
+    expect(["A", "B", "C", "D"].map((_, i) => ownerName(people[i + 1]!.address, auctionContract, people))).toEqual(["A", "B", "C", "D"]);
+    // Someone outside the demo accounts (e.g. account 5 via the scripts): a short address.
+    expect(ownerName("0x" + "5".repeat(40), auctionContract, people)).toBe("0x5555…5555");
   });
 
   it("shows 출금 in every phase while the ledger has money (withdraw is allowed any time, design.md 6번)", () => {
@@ -197,6 +209,59 @@ describe("web: 경매 진행 화면 on the test node", () => {
     expect(cardFor(s.people[2]!, s).action?.reason).toBe("장부에 받을 돈이 없습니다");
     await withdrawAll(c, await signer(0));
     expect((await loadStage(c, store, addresses)).people[0]!.pending).toBe(0n);
+  });
+
+  it("reads the NFT owner from the chain: the auction contract, then the winner", async () => {
+    const signer = (i: number) => c.provider.getSigner(i);
+    const created = await startAuction(c, await signer(0));
+    const owner = async () => {
+      const s = await loadStage(c, store, addresses);
+      return { nft: s.nft, name: ownerName(s.nft!.owner, t.auctionAddress, s.people) };
+    };
+    // Right after creation the contract keeps the NFT (design.md 4번).
+    let o = await owner();
+    expect(o.nft).toEqual({ contract: await t.nft.getAddress(), tokenId: created.tokenId, owner: t.auctionAddress });
+    expect(o.name).toBe("경매 컨트랙트 (보관 중)");
+
+    await placeBid(c, await signer(1), store, created.auctionId, eth("3"), eth("5"));
+    await placeBid(c, await signer(2), store, created.auctionId, eth("4"), eth("4"));
+    await moveTimeTo(c, created.biddingEnd);
+    await revealFromStore(c, await signer(1), store, created.auctionId);
+    await revealFromStore(c, await signer(2), store, created.auctionId);
+    expect((await owner()).name).toBe("경매 컨트랙트 (보관 중)"); // still kept while revealing
+    await moveTimeTo(c, created.revealEnd);
+    await finalizeAuction(c, await signer(3), created.auctionId);
+
+    // After finalize the winner (B, the higher bid) holds it.
+    o = await owner();
+    expect(o.nft!.owner.toLowerCase()).toBe(addresses[2]!.toLowerCase());
+    expect(o.name).toBe("B");
+  });
+
+  it("when the NFT owner cannot be read, loadStage still succeeds with nft null (the cards keep updating)", async () => {
+    const signer = (i: number) => c.provider.getSigner(i);
+    const created = await startAuction(c, await signer(0));
+    await placeBid(c, await signer(1), store, created.auctionId, eth("3"), eth("5"));
+    // An NFT handle whose ownerOf fails: an address without a contract (the call cannot be decoded).
+    const broken: Chain = { ...c, nft: new Contract(Wallet.createRandom().address, NFT_ABI, c.provider) };
+    await expect(broken.nft.getFunction("ownerOf")(created.tokenId)).rejects.toThrow();
+
+    const s = await loadStage(broken, store, addresses);
+    expect(s.nft).toBeNull();
+    expect(s.phase).toBe("bidding");
+    expect(s.people[1]!.bid?.deposit).toBe(eth("5"));
+    expect(guide(s).text).toContain("(1/4명 입찰함)");
+  });
+
+  it("an auction finalized without a valid bid gives the NFT back to the seller", async () => {
+    const signer = (i: number) => c.provider.getSigner(i);
+    const created = await startAuction(c, await signer(0));
+    await placeBid(c, await signer(4), store, created.auctionId, eth("1"), eth("3")); // D never reveals
+    await moveTimeTo(c, created.revealEnd);
+    await finalizeAuction(c, await signer(4), created.auctionId);
+    const s = await loadStage(c, store, addresses);
+    expect(s.nft!.owner.toLowerCase()).toBe(addresses[0]!.toLowerCase());
+    expect(ownerName(s.nft!.owner, t.auctionAddress, s.people)).toBe("판매자");
   });
 
   it("after 새 경매 시작 without withdrawing, the ledger from the earlier auction can still be paid out", async () => {
