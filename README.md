@@ -382,7 +382,7 @@ BlindAuction에서 빠진 분기 하나는 `finalize`의 재진입 잠금(`nonRe
 | | `feat/web-actions` | [#17](https://github.com/jaeeonma/blind-auction/pull/17) | 시연용 참여 화면 (design.md 17번 B) |
 | | `feat/web-stage` | [#18](https://github.com/jaeeonma/blind-auction/pull/18) | 경매 진행 화면으로 재배치 (한 화면에서 시연, 꺼진 버튼의 이유) |
 | | `fix/web-stage-withdraw` | [#19](https://github.com/jaeeonma/blind-auction/pull/19) | 장부가 있으면 단계와 상관없이 카드에 출금 버튼 |
-| | `feat/web-nft-owner` | - | 경매 진행 화면에 NFT 현재 소유자 |
+| | `feat/web-nft-owner` | [#20](https://github.com/jaeeonma/blind-auction/pull/20) | 경매 진행 화면에 NFT 현재 소유자 |
 
 **작업 규칙**
 - 커밋은 기능 하나가 테스트를 통과할 때마다 작게 나눈다. 메시지는 Conventional Commits + 한국어(`feat(contract): 입찰 기능 추가`). 6단계 전까지 `main`에 커밋 48개.
