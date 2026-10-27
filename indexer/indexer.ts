@@ -1,5 +1,5 @@
 import type { JsonRpcProvider } from "ethers";
-import type { Pool } from "pg";
+import type { Pool, PoolClient } from "pg";
 import { auctionEvents } from "./events.js";
 import { applyEvent } from "./store.js";
 
@@ -15,6 +15,11 @@ export interface IndexerOptions {
   contractAddress: string;
   deployBlock: number;
   batchSize: number;
+  /**
+   * Runs inside each sync transaction right before COMMIT; throwing rolls the step back. main.ts uses it
+   * to check that this Indexer still holds the Indexer lock (lock.ts, design.md 9번).
+   */
+  beforeCommit?: (client: PoolClient) => Promise<void>;
 }
 
 /**
@@ -73,6 +78,7 @@ export class Indexer {
          ON CONFLICT (id) DO UPDATE SET last_block = EXCLUDED.last_block, last_block_time = EXCLUDED.last_block_time`,
         [to, toBlock.timestamp],
       );
+      await this.options.beforeCommit?.(client);
       await client.query("COMMIT");
       return { range: { from, to }, events, caughtUp: to === head };
     } catch (err) {

@@ -3,7 +3,7 @@
 NFT를 ETH로 비공개 입찰하는 경매(Commit-Reveal). 입찰가는 해시로 숨겨 내고, 입찰 기간이 끝나면 각자 공개한다. NFT와 ETH의 교환은 스마트 컨트랙트가 보장하고, Indexer가 이벤트를 PostgreSQL에 모으며, REST API가 조회를 제공한다.
 
 - **동작하는 것:** 경매 생성 → 입찰 → 공개 → 낙찰·정산 → 출금 전체, 이벤트 수집(중단 후 재시작 시 누락·중복 없음), 조회 API, 사용자 스크립트, 시연용 웹 화면(조회, 브라우저에서 참여)
-- **테스트:** 컨트랙트 92개(커버리지 줄 100%), 통합 121개(실제 프로세스를 띄워 확인하는 시스템 테스트 포함)
+- **테스트:** 컨트랙트 92개(커버리지 줄 100%), 통합 124개(실제 프로세스를 띄워 확인하는 시스템 테스트 포함)
 - **설계 문서:** [docs/design.md](docs/design.md). 이 README는 요약과 이유만 담고, 자세한 내용은 "design.md N번"으로 연결한다.
 
 ## 목차
@@ -280,7 +280,7 @@ docs/        설계 문서
 ```bash
 cd contracts && npx hardhat test       # 컨트랙트·스크립트 92개 (몇 초)
 cd contracts && npm run coverage       # 커버리지
-npm test                               # 통합 121개 (루트, 약 2분)
+npm test                               # 통합 124개 (루트, 약 3분)
 ```
 
 통합 테스트는 PostgreSQL이 떠 있어야 한다(`docker compose up -d`). Hardhat 노드는 테스트가 직접 8546 포트에 띄웠다가 끄므로 개발용 노드(8545)와 겹치지 않는다. 테스트마다 임시 스키마나 임시 데이터베이스를 만들어 쓰고 지워서 개발 데이터는 건드리지 않는다.
@@ -292,7 +292,7 @@ npm test                               # 통합 121개 (루트, 약 2분)
 | DB 스키마 | 11 | 중복 방지, uint256 정확도, 주소·결과 칼럼 검사 |
 | Indexer | 13 | DB = 컨트랙트, 재시작, 같은 이벤트 두 번, DB·노드 오류 시 롤백, 시작 확인(설정 오류·노드 재시작) |
 | API | 33 | 상태 경계값(마감 −1초, 마감 정각), 필터, 오류 코드, 화면 파일 제공(쓰기 거부, web/ 밖 접근 거부, 브라우저용 ethers, 배포 기록) |
-| 시스템 | 6 | 모든 구성 요소를 **실제 프로세스**로 띄워 확인 (아래). 6번째는 틀린 DEPLOY_BLOCK이면 Indexer가 스스로 멈추는지 |
+| 시스템 | 9 | 모든 구성 요소를 **실제 프로세스**로 띄워 확인 (아래). 틀린 DEPLOY_BLOCK이면 Indexer가 스스로 멈추는지, Indexer 두 개·실행 중 reset·잠금 연결 끊김 (5-a~5-c) |
 | 웹 화면 | 58 | 조회: 상태 이름, 남은 시간, 금액 표시, Indexer 멈춤 판단, 화면 경로, API 값을 HTML로 넣는 코드(innerHTML 등)가 없는지. 참여(테스트 노드에서 브라우저 모듈 실행): secret을 전송 전에 저장하는지, 저장 실패·보내기 전 확인에 걸리면 트랜잭션을 보내지 않는지, 손상·변조된 저장값, 가져오기, 시간 앞당기기, 노드 주소 제한과 chain id 확인, 직접 적은 ABI가 컴파일 결과와 같은지. 경매 진행 화면: 단계별 다음에 할 일, 카드 버튼과 꺼진 이유, 장부가 있으면 언제나 출금, 새 경매 시작, NFT 현재 소유자(생성 후 경매 컨트랙트, 종료 후 낙찰자·판매자, 읽지 못해도 나머지는 갱신) |
 
 **시스템 테스트** (design.md 14번 통합 테스트). 스크립트로 트랜잭션을 보내고, Indexer·API 프로세스를 띄우거나 강제 종료하며 확인한다.
@@ -327,8 +327,10 @@ BlindAuction에서 빠진 분기 하나는 `finalize`의 재진입 잠금(`nonRe
 | Indexer가 꺼지거나 강제 종료됨 | 다시 켜면 책갈피 다음 블록부터 빠진 이벤트를 채운다 | `npm run indexer` | 시스템 2-a, 2-b |
 | DB 연결이 끊김 | 그 묶음이 롤백되고 책갈피도 그대로. `RETRY_DELAY_MS` 뒤 같은 범위를 다시 처리한다 | DB를 다시 띄운다 | Indexer (DB 오류) |
 | 노드 연결이 끊김 | DB에 아무것도 쓰지 않고 재시도를 반복한다 | 노드를 다시 띄운다 | Indexer (노드 끊김) |
+| Indexer를 두 개 켬 (터미널 두 개) | 두 번째 Indexer는 시작할 때 "Indexer가 이미 실행 중입니다"와 잠금을 가진 연결(pid)을 알려 주고 멈춘다(PostgreSQL advisory lock). 둘은 책갈피 하나를 같이 써서, 서로 다른 `CONTRACT_ADDRESS`로 켜져 있으면(예: 다시 배포한 뒤 예전 터미널의 Indexer) 입찰·공개 이벤트가 빠진다 | 다른 터미널의 Indexer를 끄고 다시 실행. 이미 빠졌으면 하나만 남기고 `npm run indexer:reset` 후 다시 실행 | 시스템 5-a |
+| Indexer의 잠금 연결만 끊김 (DB 재시작 등) | 동기화를 멈추고 다시 연결해 잠금을 잡은 뒤 이어서 읽는다. 그 사이 다른 Indexer가 잡았으면 멈춘다 | 멈췄으면 실행 중인 Indexer가 하나뿐인지 확인 | 시스템 5-c |
 | API가 꺼짐 | Indexer와 무관하다 | `npm run api` | - |
-| DB가 블록체인과 다르다고 의심됨 | - | Indexer를 멈추고 `npm run indexer:reset` → Indexer 다시 실행. 책갈피와 테이블을 비우고 배포 블록부터 다시 만든다 | 시스템 3-b |
+| DB가 블록체인과 다르다고 의심됨 | Indexer가 켜져 있으면 `indexer:reset`이 비우지 않고 거부한다 | Indexer를 멈추고 `npm run indexer:reset` → Indexer 다시 실행. 책갈피와 테이블을 비우고 배포 블록부터 다시 만든다 | 시스템 3-b, 5-b |
 | 로컬 노드를 다시 켬 (체인이 처음부터 시작) | 아래 절차를 빠뜨리면 Indexer가 시작할 때 감지하고 할 일을 알려 준 뒤 멈춘다. 스크립트도 배포 기록의 주소에 컨트랙트가 없으면 `deploy`를 먼저 하라고 안내한다 | Indexer를 멈추고 `npm run deploy` → `.env` 갱신 → `npm run indexer:reset` → Indexer 다시 실행 | Indexer (시작 확인), 스크립트 (배포 주소 확인) |
 | `CONTRACT_ADDRESS`·`DEPLOY_BLOCK`이 틀림 | Indexer가 시작할 때 멈추고 원인과 할 일을 알려 준다. `DEPLOY_BLOCK`이 늦으면 실제 배포 블록도 알려 준다 | 알려 준 대로 `.env`를 고치고, 저장된 데이터가 있으면 `npm run indexer:reset` 후 다시 실행 | Indexer (시작 확인), 시스템 4 |
 
@@ -383,6 +385,7 @@ BlindAuction에서 빠진 분기 하나는 `finalize`의 재진입 잠금(`nonRe
 | | `feat/web-stage` | [#18](https://github.com/jaeeonma/blind-auction/pull/18) | 경매 진행 화면으로 재배치 (한 화면에서 시연, 꺼진 버튼의 이유) |
 | | `fix/web-stage-withdraw` | [#19](https://github.com/jaeeonma/blind-auction/pull/19) | 장부가 있으면 단계와 상관없이 카드에 출금 버튼 |
 | | `feat/web-nft-owner` | [#20](https://github.com/jaeeonma/blind-auction/pull/20) | 경매 진행 화면에 NFT 현재 소유자 |
+| | `feat/indexer-lock` | [#21](https://github.com/jaeeonma/blind-auction/pull/21) | Indexer 중복 실행 막기 (PostgreSQL advisory lock), 실행 중 reset 거부 |
 
 **작업 규칙**
 - 커밋은 기능 하나가 테스트를 통과할 때마다 작게 나눈다. 메시지는 Conventional Commits + 한국어(`feat(contract): 입찰 기능 추가`). 6단계 전까지 `main`에 커밋 48개.

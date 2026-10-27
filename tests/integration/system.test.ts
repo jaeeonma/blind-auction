@@ -3,12 +3,14 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, inject, it } from "vitest";
 import request from "supertest";
 import type { Contract, JsonRpcProvider } from "ethers";
+import { lockHolder, tryLock } from "../../indexer/lock.js";
 import { attachAuction, testProvider } from "../helpers/chain.js";
 import {
   createTempDatabase,
   freePort,
   indexedBlock,
   runBackendScript,
+  runBackendScriptResult,
   runScript,
   runServiceUntilExit,
   scriptDirs,
@@ -307,7 +309,9 @@ describe("system: scripts → chain → Indexer → DB → API (design.md 14번)
     expect(rewound.bids).toHaveLength(4);
     expect((rewound.bids as Array<{ bidder: string; deposit: string }>).find((b) => b.bidder === first!.bidder)!.deposit).toBe("1");
 
-    // The recovery command, run as a real process.
+    // The recovery command, run as a real process. It refuses while an Indexer holds the lock (5-b), so
+    // wait until PostgreSQL has noticed the killed Indexer's connection.
+    await waitLockFree();
     const out = await runBackendScript("indexer/reset.ts", { DATABASE_URL: db.url });
     expect(out).toContain("removed 1 auction(s), 4 bid(s) and the bookmark");
     expect(await countRows()).toEqual({ auctions: 0, bids: 0 });
@@ -337,5 +341,79 @@ describe("system: scripts → chain → Indexer → DB → API (design.md 14번)
     await startIndexer();
     await waitIndexed();
     expect(await countRows()).toEqual({ auctions: 1, bids: 1 });
+  });
+
+  // ── only one Indexer per database (design.md 9번 "Indexer가 두 개 켜짐") ──
+
+  /** PostgreSQL pid of the Indexer's lock connection, from its startup line. */
+  const lockPid = (s: Service) => Number(/Indexer lock: PostgreSQL pid (\d+)/.exec(s.output())![1]);
+  /** Waits until nobody holds the Indexer lock (PostgreSQL releases it when the connection closes). */
+  const waitLockFree = () =>
+    waitFor("the Indexer lock to be released", async () => (await lockHolder(db.pool)) === null, 30_000);
+
+  it("5-a. a second Indexer stops with what to do (exit 1); once the first is stopped it can start", async () => {
+    const first = await startIndexer();
+    const pid = lockPid(first);
+    expect(await lockHolder(db.pool)).toBe(pid);
+
+    const second = await runServiceUntilExit("indexer", indexerEnv());
+    expect(second.code).toBe(1); // exited by itself, not killed after the timeout
+    expect(second.output).toContain("시작 확인 실패");
+    expect(second.output).toContain("Indexer가 이미 실행 중입니다");
+    expect(second.output).toContain("할 일: 다른 터미널의 Indexer를 끄고 다시 실행하세요");
+    expect(second.output).toContain(`잠금을 가진 PostgreSQL 연결(pid): ${pid}`);
+    expect(second.output).not.toContain("indexer: contract"); // never started indexing
+
+    // Hard kill (a crash): PostgreSQL drops the connection and with it the lock. No stale lock remains.
+    await first.kill();
+    await waitLockFree();
+    await startIndexer();
+    expect(await script("demo")).toContain("모든 검사 통과");
+    await waitIndexed();
+    expect(await countRows()).toEqual({ auctions: 1, bids: 4 });
+  });
+
+  it("5-b. indexer:reset refuses to empty the DB while an Indexer runs", async () => {
+    const indexer = await startIndexer();
+    expect(await script("demo")).toContain("모든 검사 통과");
+    await waitIndexed();
+    const before = await snapshot();
+
+    const refused = await runBackendScriptResult("indexer/reset.ts", { DATABASE_URL: db.url });
+    expect(refused.code).toBe(1);
+    expect(refused.output).toContain("Indexer가 실행 중이라 DB를 비우지 않았습니다");
+    expect(refused.output).toContain(`잠금을 가진 PostgreSQL 연결(pid): ${lockPid(indexer)}`);
+    expect(await snapshot()).toEqual(before); // nothing removed
+
+    await indexer.kill();
+    await waitLockFree();
+    const out = await runBackendScript("indexer/reset.ts", { DATABASE_URL: db.url });
+    expect(out).toContain("removed 1 auction(s), 4 bid(s) and the bookmark");
+  });
+
+  it("5-c. lock connection dropped: the Indexer takes the lock again, or stops if another one took it", async () => {
+    const indexer = await startIndexer();
+    const admin = await db.pool.connect();
+    try {
+      // (1) The lock connection is cut (like a DB restart or a network drop) and nobody else wants the
+      // lock: the Indexer takes it again on its next step and keeps indexing.
+      await admin.query("SELECT pg_terminate_backend($1, 5000)", [lockPid(indexer)]);
+      await waitFor("the Indexer to take the lock again", async () => indexer.output().includes("took the Indexer lock again"), 30_000, () => indexer.output());
+      const newPid = Number(/took the Indexer lock again \(PostgreSQL pid (\d+)\)/.exec(indexer.output())![1]);
+      expect(await lockHolder(db.pool)).toBe(newPid);
+      expect(await script("demo")).toContain("모든 검사 통과");
+      await waitIndexed();
+      expect(await countRows()).toEqual({ auctions: 1, bids: 4 });
+
+      // (2) Cut again, and this time another session takes the lock first (pg_terminate_backend waits
+      // for the connection to end, so the next statement runs before the Indexer can reconnect).
+      await admin.query("SELECT pg_terminate_backend($1, 5000)", [newPid]);
+      expect(await tryLock(admin)).toBe(true);
+      expect(await indexer.exited).toBe(1);
+      expect(indexer.output()).toContain("다른 Indexer(또는 indexer:reset)가 잠금을 가져갔습니다. 이 Indexer는 멈춥니다");
+      expect(indexer.output()).toContain(`잠금을 가진 PostgreSQL 연결(pid): ${(await admin.query("SELECT pg_backend_pid() AS pid")).rows[0].pid}`);
+    } finally {
+      admin.release(true); // closing the connection also releases the test's lock
+    }
   });
 });

@@ -73,6 +73,8 @@ export interface Service {
   output(): string;
   /** Hard kill (TerminateProcess on Windows, SIGKILL elsewhere): a crash, not a clean shutdown. */
   kill(): Promise<void>;
+  /** Exit code when the process ends by itself (null when killed). */
+  exited: Promise<number | null>;
 }
 
 /**
@@ -93,12 +95,13 @@ export async function startService(
   const append = (chunk: Buffer) => (output += chunk.toString());
   child.stdout!.on("data", append);
   child.stderr!.on("data", append);
-  const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
+  const exited = new Promise<number | null>((resolve) => child.once("exit", (code) => resolve(code)));
 
   await waitFor(`${name} to start`, async () => output.includes(readyText), 30_000, () => output);
   return {
     name,
     output: () => output,
+    exited,
     async kill() {
       if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
       await exited;
@@ -131,13 +134,19 @@ export async function runServiceUntilExit(
 
 /** Runs a one-shot backend command (e.g. `npm run indexer:reset`) as a process and returns its output. */
 export async function runBackendScript(file: string, env: Record<string, string>): Promise<string> {
+  const { code, output } = await runBackendScriptResult(file, env);
+  if (code !== 0) throw new Error(`${file} failed (${code}):\n${output}`);
+  return output;
+}
+
+/** Same, but returns the exit code instead of failing on a non-zero one. */
+export async function runBackendScriptResult(file: string, env: Record<string, string>): Promise<{ code: number | null; output: string }> {
   const child = spawn(process.execPath, ["--import", "tsx", file], { cwd: rootDir, env: { ...process.env, ...env } });
   let output = "";
   child.stdout!.on("data", (c: Buffer) => (output += c.toString()));
   child.stderr!.on("data", (c: Buffer) => (output += c.toString()));
   const code = await new Promise<number | null>((resolve) => child.once("exit", resolve));
-  if (code !== 0) throw new Error(`${file} failed (${code}):\n${output}`);
-  return output;
+  return { code, output };
 }
 
 export interface ScriptEnv {

@@ -6,6 +6,10 @@ export interface RunOptions {
   retryDelayMs: number;
   signal: AbortSignal;
   log?: (message: string) => void;
+  /** Runs before every sync step (main.ts: make sure the Indexer lock is still held, lock.ts). */
+  beforeStep?: () => Promise<void>;
+  /** Errors that stop the loop instead of being retried (e.g. another Indexer took the lock). */
+  isFatal?: (err: unknown) => boolean;
 }
 
 /**
@@ -23,10 +27,12 @@ export async function runIndexer(indexer: Indexer, options: RunOptions): Promise
 
   while (!options.signal.aborted) {
     try {
+      await options.beforeStep?.();
       const r = await indexer.syncOnce();
       if (r.range) log(`indexer: blocks ${r.range.from}-${r.range.to}, ${r.events} event(s)`);
       if (r.caughtUp) await wait(options.pollIntervalMs);
     } catch (err) {
+      if (options.isFatal?.(err)) throw err;
       log(`indexer: sync failed, retrying in ${options.retryDelayMs} ms: ${(err as Error).message}`);
       await wait(options.retryDelayMs);
     }
