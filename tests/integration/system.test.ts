@@ -10,6 +10,7 @@ import {
   freePort,
   indexedBlock,
   runBackendScript,
+  runBackendScriptResult,
   runScript,
   runServiceUntilExit,
   scriptDirs,
@@ -308,7 +309,9 @@ describe("system: scripts → chain → Indexer → DB → API (design.md 14번)
     expect(rewound.bids).toHaveLength(4);
     expect((rewound.bids as Array<{ bidder: string; deposit: string }>).find((b) => b.bidder === first!.bidder)!.deposit).toBe("1");
 
-    // The recovery command, run as a real process.
+    // The recovery command, run as a real process. It refuses while an Indexer holds the lock (5-b), so
+    // wait until PostgreSQL has noticed the killed Indexer's connection.
+    await waitLockFree();
     const out = await runBackendScript("indexer/reset.ts", { DATABASE_URL: db.url });
     expect(out).toContain("removed 1 auction(s), 4 bid(s) and the bookmark");
     expect(await countRows()).toEqual({ auctions: 0, bids: 0 });
@@ -368,6 +371,24 @@ describe("system: scripts → chain → Indexer → DB → API (design.md 14번)
     expect(await script("demo")).toContain("모든 검사 통과");
     await waitIndexed();
     expect(await countRows()).toEqual({ auctions: 1, bids: 4 });
+  });
+
+  it("5-b. indexer:reset refuses to empty the DB while an Indexer runs", async () => {
+    const indexer = await startIndexer();
+    expect(await script("demo")).toContain("모든 검사 통과");
+    await waitIndexed();
+    const before = await snapshot();
+
+    const refused = await runBackendScriptResult("indexer/reset.ts", { DATABASE_URL: db.url });
+    expect(refused.code).toBe(1);
+    expect(refused.output).toContain("Indexer가 실행 중이라 DB를 비우지 않았습니다");
+    expect(refused.output).toContain(`잠금을 가진 PostgreSQL 연결(pid): ${lockPid(indexer)}`);
+    expect(await snapshot()).toEqual(before); // nothing removed
+
+    await indexer.kill();
+    await waitLockFree();
+    const out = await runBackendScript("indexer/reset.ts", { DATABASE_URL: db.url });
+    expect(out).toContain("removed 1 auction(s), 4 bid(s) and the bookmark");
   });
 
   it("5-c. lock connection dropped: the Indexer takes the lock again, or stops if another one took it", async () => {
