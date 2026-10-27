@@ -2,10 +2,12 @@ import pg from "pg";
 
 // Only one Indexer per database (design.md 9번 "Indexer가 두 개 켜짐").
 //
-// Two Indexers on one database share one bookmark (indexer_state) and write at the same time, and the
-// copy can lose events: an UPDATE (reveal, finalize) only sees rows already committed, so it can miss a
-// bid the other Indexer has inserted but not yet committed, and the bookmark then moves past that event.
-// With different CONTRACT_ADDRESS values it is worse: one marks blocks as done for the other.
+// Two Indexers on one database share one bookmark (indexer_state). With the same CONTRACT_ADDRESS that
+// only wastes work: every step writes its whole range and the new bookmark in one transaction and every
+// write is idempotent, so blocks may be read twice but nothing is lost. With different CONTRACT_ADDRESS
+// values (e.g. an Indexer left running in an old terminal after a new deploy) events ARE lost: the one
+// watching the other address finds nothing in a new block, still moves the shared bookmark past it, and
+// the right one never reads that block. Either way only one Indexer should run.
 //
 // A PostgreSQL advisory lock is taken on a connection of its own and held until the process ends.
 // PostgreSQL releases it by itself when that connection closes (process killed, Ctrl+C, crash), so
@@ -46,7 +48,7 @@ export async function tryLock(client: pg.ClientBase): Promise<boolean> {
 /** The Korean message for a person, as with the startup checks (design.md 9번). */
 export function alreadyRunningMessage(holderPid: number | null): string {
   return (
-    "Indexer가 이미 실행 중입니다. 같은 DB에 Indexer가 둘이면 책갈피를 같이 쓰면서 이벤트가 빠질 수 있습니다.\n" +
+    "Indexer가 이미 실행 중입니다. 같은 DB에 Indexer가 둘이면 책갈피 하나를 같이 쓰고, 서로 다른 CONTRACT_ADDRESS로 켜져 있으면 이벤트가 빠집니다.\n" +
     "할 일: 다른 터미널의 Indexer를 끄고 다시 실행하세요 (indexer:reset이 실행 중일 때도 이렇게 나옵니다)\n" +
     `잠금을 가진 PostgreSQL 연결(pid): ${holderPid ?? "알 수 없음"}`
   );

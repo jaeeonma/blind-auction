@@ -327,7 +327,7 @@ BlindAuction에서 빠진 분기 하나는 `finalize`의 재진입 잠금(`nonRe
 | Indexer가 꺼지거나 강제 종료됨 | 다시 켜면 책갈피 다음 블록부터 빠진 이벤트를 채운다 | `npm run indexer` | 시스템 2-a, 2-b |
 | DB 연결이 끊김 | 그 묶음이 롤백되고 책갈피도 그대로. `RETRY_DELAY_MS` 뒤 같은 범위를 다시 처리한다 | DB를 다시 띄운다 | Indexer (DB 오류) |
 | 노드 연결이 끊김 | DB에 아무것도 쓰지 않고 재시도를 반복한다 | 노드를 다시 띄운다 | Indexer (노드 끊김) |
-| Indexer를 두 개 켬 (터미널 두 개) | 두 번째 Indexer는 시작할 때 "Indexer가 이미 실행 중입니다"와 잠금을 가진 연결(pid)을 알려 주고 멈춘다(PostgreSQL advisory lock). 둘이 같이 돌면 책갈피를 같이 써서 입찰·공개 이벤트가 빠질 수 있다 | 다른 터미널의 Indexer를 끄고 다시 실행. 이미 빠졌으면 하나만 남기고 `npm run indexer:reset` 후 다시 실행 | 시스템 5-a |
+| Indexer를 두 개 켬 (터미널 두 개) | 두 번째 Indexer는 시작할 때 "Indexer가 이미 실행 중입니다"와 잠금을 가진 연결(pid)을 알려 주고 멈춘다(PostgreSQL advisory lock). 둘은 책갈피 하나를 같이 써서, 서로 다른 `CONTRACT_ADDRESS`로 켜져 있으면(예: 다시 배포한 뒤 예전 터미널의 Indexer) 입찰·공개 이벤트가 빠진다 | 다른 터미널의 Indexer를 끄고 다시 실행. 이미 빠졌으면 하나만 남기고 `npm run indexer:reset` 후 다시 실행 | 시스템 5-a |
 | Indexer의 잠금 연결만 끊김 (DB 재시작 등) | 동기화를 멈추고 다시 연결해 잠금을 잡은 뒤 이어서 읽는다. 그 사이 다른 Indexer가 잡았으면 멈춘다 | 멈췄으면 실행 중인 Indexer가 하나뿐인지 확인 | 시스템 5-c |
 | API가 꺼짐 | Indexer와 무관하다 | `npm run api` | - |
 | DB가 블록체인과 다르다고 의심됨 | Indexer가 켜져 있으면 `indexer:reset`이 비우지 않고 거부한다 | Indexer를 멈추고 `npm run indexer:reset` → Indexer 다시 실행. 책갈피와 테이블을 비우고 배포 블록부터 다시 만든다 | 시스템 3-b, 5-b |
